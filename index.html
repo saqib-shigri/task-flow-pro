@@ -3,20 +3,86 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>TaskFlow Pro | Local Storage + Excel</title>
+  <title>TaskFlow Pro | Final Polished Version</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <style>
-    * { font-family: 'Inter', sans-serif; }
-    body { background: radial-gradient(circle at 10% 30%, #f0f4ff, #e6edfa); background-attachment: fixed; }
-    .glass-panel { background: rgba(255,255,255,0.92); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.5); }
-    .fade-in { animation: fadeUp 0.35s ease-out; }
-    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-    .stats-card { background: white; border-radius: 1rem; padding: 0.75rem; text-align: center; cursor: pointer; transition: all 0.2s; border: 1px solid #eef2ff; }
-    .stats-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
-    .stats-card.active { background: #eef2ff; border-color: #6366f1; }
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body {
+      background: radial-gradient(circle at 10% 30%, #f0f4ff, #e6edfa);
+      background-attachment: fixed;
+      transition: background 0.5s ease;
+    }
+    body:hover {
+      background: radial-gradient(circle at 20% 40%, #eef2ff, #dfe6f5);
+    }
+    .glass-panel {
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.5);
+      transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.4, 1.1), box-shadow 0.35s ease;
+      transform-style: preserve-3d;
+    }
+    .glass-panel:hover {
+      transform: translateY(-6px) rotateX(2deg);
+      box-shadow: 0 25px 40px -12px rgba(0,0,0,0.2);
+    }
+    .fade-in { animation: fadeUp 0.5s cubic-bezier(0.2, 0.9, 0.4, 1.1); }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(20px) rotateX(-5deg); } to { opacity:1; transform:translateY(0) rotateX(0); } }
+    .stats-card {
+      background: white;
+      border-radius: 1rem;
+      padding: 0.75rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+      border: 1px solid #eef2ff;
+      transform: translateZ(0);
+    }
+    .stats-card:hover {
+      transform: translateY(-5px) scale(1.02);
+      box-shadow: 0 20px 25px -12px rgba(0,0,0,0.15);
+    }
+    .stats-card.active { background: #eef2ff; border-color: #6366f1; transform: scale(1.02); }
     ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: #eef2ff; } ::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 10px; }
+    .company-logo { max-width: 60px; max-height: 60px; object-fit: contain; border-radius: 0.5rem; transition: transform 0.2s; }
+    .company-logo:hover { transform: scale(1.05) rotate(1deg); }
+    .role-card {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      cursor: pointer;
+      transform-style: preserve-3d;
+    }
+    .role-card:hover {
+      transform: translateY(-8px) rotateX(3deg);
+      box-shadow: 0 25px 30px -12px rgba(0,0,0,0.2);
+    }
+    button, .btn {
+      transition: transform 0.15s ease, background 0.2s;
+    }
+    button:active { transform: scale(0.97); }
+    input, textarea, select { transition: all 0.2s; }
+    input:focus, textarea:focus, select:focus {
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.3);
+      border-color: #6366f1;
+      outline: none;
+      transform: scale(0.99);
+    }
+    .settings-btn:hover i {
+      animation: gentlePulse 0.5s ease;
+    }
+    @keyframes gentlePulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    .data-row {
+      transition: all 0.2s;
+    }
+    .data-row:hover {
+      background: #f8fafc;
+      transform: translateX(3px);
+    }
   </style>
 </head>
 <body class="min-h-screen p-5 md:p-8">
@@ -28,12 +94,33 @@
   const STORAGE_EMPLOYEES_PREFIX = "taskflow_employees_";
   const STORAGE_TASKS_PREFIX = "taskflow_tasks_";
   const SESSION_USER = "taskflow_logged_user";
+  const SUPER_CREDENTIALS = "taskflow_super_creds";
 
   let companies = [];
   let currentCompanyId = null;
   let employees = [];
   let tasks = [];
   let currentUser = null;
+  let loginRole = null;
+
+  let SUPER_EMAIL = "super@taskflow.com";
+  let SUPER_PASSWORD = "super123";
+
+  function loadSuperCredentials() {
+    const stored = localStorage.getItem(SUPER_CREDENTIALS);
+    if (stored) {
+      const creds = JSON.parse(stored);
+      SUPER_EMAIL = creds.email;
+      SUPER_PASSWORD = creds.password;
+    } else {
+      localStorage.setItem(SUPER_CREDENTIALS, JSON.stringify({ email: SUPER_EMAIL, password: SUPER_PASSWORD }));
+    }
+  }
+  function saveSuperCredentials(email, password) {
+    SUPER_EMAIL = email;
+    SUPER_PASSWORD = password;
+    localStorage.setItem(SUPER_CREDENTIALS, JSON.stringify({ email: SUPER_EMAIL, password: SUPER_PASSWORD }));
+  }
 
   const generateId = () => Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
@@ -42,7 +129,14 @@
     const stored = localStorage.getItem(STORAGE_COMPANIES);
     companies = stored ? JSON.parse(stored) : [];
     if (!companies.length) {
-      companies.push({ id: generateId(), name: "Demo Corp", logo: "", address: "123 Business St" });
+      companies.push({ 
+        id: generateId(), 
+        name: "Demo Corp", 
+        email: "demo@democorp.com", 
+        logoDataURL: "https://placehold.co/200x80?text=Demo+Corp", 
+        address: "123 Business Street",
+        password: "demo123"
+      });
       saveCompanies();
     }
   }
@@ -53,9 +147,9 @@
     const taskKey = STORAGE_TASKS_PREFIX + companyId;
     employees = JSON.parse(localStorage.getItem(empKey) || '[]');
     tasks = JSON.parse(localStorage.getItem(taskKey) || '[]');
-    if (!employees.length) {
-      const admin = { id: generateId(), name: "Admin", email: "admin@company.com", password: "admin123", role: "admin" };
-      const emp = { id: generateId(), name: "Employee", email: "employee@company.com", password: "emp123", role: "employee" };
+    if (!employees.length && companies.find(c => c.id === companyId)) {
+      const admin = { id: generateId(), name: "Admin", email: "admin@company.com", password: "admin123", role: "admin", designation: "Company Administrator", whatsapp: "" };
+      const emp = { id: generateId(), name: "Employee", email: "employee@company.com", password: "emp123", role: "employee", designation: "Software Developer", whatsapp: "923001234567" };
       employees.push(admin, emp);
       const today = new Date().toISOString().slice(0,10);
       tasks.push({ id: generateId(), employeeId: emp.id, date: today, taskText: "Welcome task – get started", status: "present" });
@@ -101,8 +195,7 @@
     } else currentUser = null;
   }
 
-  // ------------------------- LOGIN -------------------------
-  const SUPER_EMAIL = "super@taskflow.com", SUPER_PASSWORD = "super123";
+  // ------------------------- LOGIN (3 roles) -------------------------
   function loginSuper(email, password) {
     if (email === SUPER_EMAIL && password === SUPER_PASSWORD) {
       setSession({ id: "super", name: "System Owner", email: SUPER_EMAIL, role: "super" }, null);
@@ -111,20 +204,205 @@
     }
     return false;
   }
-  function loginToCompany(companyId, email, password) {
-    setCurrentCompany(companyId);
-    const user = employees.find(e => e.email === email && e.password === password);
-    if (user) { setSession(user, companyId); renderApp(); return true; }
+
+  function loginCompanyAdmin(companyEmail, companyPassword) {
+    const company = companies.find(c => c.email === companyEmail);
+    if (!company) return false;
+    if (company.password !== companyPassword) return false;
+    setCurrentCompany(company.id);
+    let adminUser = employees.find(e => e.role === "admin");
+    if (!adminUser) {
+      adminUser = { id: generateId(), name: "Company Admin", email: companyEmail, password: companyPassword, role: "admin", designation: "Company Administrator", whatsapp: "" };
+      employees.push(adminUser);
+      saveCompanyData(company.id);
+    }
+    setSession(adminUser, company.id);
+    return true;
+  }
+
+  function loginEmployee(companyEmail, email, password) {
+    const company = companies.find(c => c.email === companyEmail);
+    if (!company) return false;
+    setCurrentCompany(company.id);
+    const user = employees.find(e => e.email === email && e.password === password && e.role === "employee");
+    if (user) {
+      setSession(user, company.id);
+      return true;
+    }
     return false;
   }
+
   function logout() { setSession(null); renderApp(); }
 
-  // ------------------------- OWNER OPERATIONS -------------------------
-  function addCompany(name, logo, address) {
-    if (!name) return alert("Company name required");
-    companies.push({ id: generateId(), name: name.trim(), logo: logo || "", address: address || "" });
+  window.handleSuperLogin = function() {
+    const email = document.getElementById("superEmail").value;
+    const pwd = document.getElementById("superPassword").value;
+    if (loginSuper(email, pwd)) { loginRole = null; renderApp(); }
+    else alert("Invalid super admin credentials");
+  };
+  window.handleCompanyAdminLogin = function() {
+    const email = document.getElementById("compAdminEmail").value;
+    const pwd = document.getElementById("compAdminPassword").value;
+    if (loginCompanyAdmin(email, pwd)) { loginRole = null; renderApp(); }
+    else alert("Invalid company credentials");
+  };
+  window.handleEmployeeLogin = function() {
+    const companyEmail = document.getElementById("empCompanyEmail").value;
+    const email = document.getElementById("empEmail").value;
+    const pwd = document.getElementById("empPassword").value;
+    if (loginEmployee(companyEmail, email, pwd)) { loginRole = null; renderApp(); }
+    else alert("Invalid employee credentials");
+  };
+  window.goBackToRoleSelect = function() {
+    loginRole = null;
+    renderApp();
+  };
+  window.openWhatsApp = function(number) {
+    if (!number) { alert("No WhatsApp number"); return; }
+    let clean = number.replace(/\D/g, '');
+    if (clean.startsWith('0')) clean = clean.substring(1);
+    window.open(`https://wa.me/${clean}`, '_blank');
+  };
+
+  // ------------------------- PROFILE SETTINGS (fixed) -------------------------
+  window.showProfileSettings = function() {
+    const isAdmin = currentUser.role === "admin";
+    const designationField = isAdmin ? '' : `
+      <div>
+        <label class="block text-sm font-medium mb-1">Designation</label>
+        <input type="text" id="editDesignation" placeholder="e.g., Web Developer" class="w-full border rounded-xl px-3 py-2" value="${(currentUser.designation || '').replace(/</g, '&lt;')}">
+      </div>
+    `;
+    const modalHtml = `
+      <div id="profileModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl transform transition-all duration-300">
+          <h3 class="text-2xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-user-cog text-indigo-600"></i> Edit Profile</h3>
+          <div class="space-y-3">
+            <div><label class="block text-sm font-medium mb-1">Full Name</label><input type="text" id="editName" class="w-full border rounded-xl px-3 py-2" value="${currentUser.name.replace(/</g, '&lt;')}"></div>
+            <div><label class="block text-sm font-medium mb-1">Email</label><input type="email" id="editEmail" class="w-full border rounded-xl px-3 py-2" value="${currentUser.email}"></div>
+            <div><label class="block text-sm font-medium mb-1">New Password (leave blank to keep unchanged)</label><input type="password" id="editPassword" class="w-full border rounded-xl px-3 py-2"></div>
+            ${designationField}
+            <div class="flex justify-end gap-3 mt-4">
+              <button type="button" id="closeProfileModal" class="px-4 py-2 border rounded-xl hover:bg-gray-50">Cancel</button>
+              <button type="button" id="saveProfileBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const container = document.getElementById("modalContainer");
+    container.innerHTML = modalHtml;
+    const closeModal = () => container.innerHTML = '';
+    document.getElementById("closeProfileModal")?.addEventListener("click", closeModal);
+    document.getElementById("saveProfileBtn")?.addEventListener("click", () => {
+      const newName = document.getElementById("editName").value.trim();
+      const newEmail = document.getElementById("editEmail").value.trim();
+      const newPassword = document.getElementById("editPassword").value;
+      const newDesignation = isAdmin ? null : document.getElementById("editDesignation")?.value.trim();
+      if (!newName || !newEmail) { alert("Name and email are required"); return; }
+      const userIndex = employees.findIndex(e => e.id === currentUser.id);
+      if (userIndex !== -1) {
+        employees[userIndex].name = newName;
+        employees[userIndex].email = newEmail;
+        if (newPassword) employees[userIndex].password = newPassword;
+        if (!isAdmin && newDesignation) employees[userIndex].designation = newDesignation;
+        saveCompanyData(currentCompanyId);
+        currentUser.name = newName;
+        currentUser.email = newEmail;
+        if (newPassword) currentUser.password = newPassword;
+        if (!isAdmin && newDesignation) currentUser.designation = newDesignation;
+        setSession(currentUser, currentCompanyId);
+        alert("Profile updated successfully!");
+        closeModal();
+        renderApp();
+      } else {
+        alert("User not found in company records");
+      }
+    });
+    document.getElementById("profileModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("profileModal")) closeModal(); });
+  };
+
+  // ------------------------- BROADCAST WHATSAPP MODAL -------------------------
+  window.showBroadcastModal = function() {
+    const empList = employees.filter(e => e.whatsapp && e.whatsapp.trim() !== "" && e.id !== currentUser.id);
+    if (empList.length === 0) {
+      alert("No employees with WhatsApp numbers found.");
+      return;
+    }
+    const modalHtml = `
+      <div id="broadcastModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
+          <h3 class="text-2xl font-bold mb-4 flex items-center gap-2"><i class="fab fa-whatsapp text-green-600"></i> Broadcast WhatsApp</h3>
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-1">Your Message:</label>
+            <textarea id="broadcastMsg" rows="3" class="w-full border rounded-xl px-3 py-2" placeholder="Type your message here..."></textarea>
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-2">Select recipients:</label>
+            <div class="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto border rounded-xl p-2">
+              ${empList.map(emp => `
+                <label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                  <input type="checkbox" class="recipientCheckbox" value="${emp.whatsapp}" data-name="${emp.name}">
+                  <span><i class="fab fa-whatsapp text-green-600"></i> ${emp.name} (${emp.whatsapp})</span>
+                </label>
+              `).join('')}
+            </div>
+            <div class="mt-2">
+              <button id="selectAllBtn" class="text-sm text-indigo-600 hover:underline">Select All</button>
+              <button id="deselectAllBtn" class="text-sm text-gray-500 hover:underline ml-2">Deselect All</button>
+            </div>
+          </div>
+          <div class="flex justify-end gap-3">
+            <button type="button" id="closeBroadcastModal" class="px-4 py-2 border rounded-xl">Cancel</button>
+            <button type="button" id="sendBroadcastBtn" class="px-4 py-2 bg-green-600 text-white rounded-xl"><i class="fab fa-whatsapp"></i> Send to Selected</button>
+          </div>
+          <p class="text-xs text-gray-500 mt-3">⚠️ This will open a new WhatsApp chat window for each selected recipient. Please allow pop‑ups.</p>
+        </div>
+      </div>
+    `;
+    const container = document.getElementById("modalContainer");
+    container.innerHTML = modalHtml;
+    const close = () => container.innerHTML = '';
+    document.getElementById("closeBroadcastModal")?.addEventListener("click", close);
+    document.getElementById("selectAllBtn")?.addEventListener("click", () => {
+      document.querySelectorAll(".recipientCheckbox").forEach(cb => cb.checked = true);
+    });
+    document.getElementById("deselectAllBtn")?.addEventListener("click", () => {
+      document.querySelectorAll(".recipientCheckbox").forEach(cb => cb.checked = false);
+    });
+    document.getElementById("sendBroadcastBtn")?.addEventListener("click", () => {
+      const message = document.getElementById("broadcastMsg").value.trim();
+      if (!message) { alert("Please enter a message"); return; }
+      const selected = Array.from(document.querySelectorAll(".recipientCheckbox:checked")).map(cb => cb.value);
+      if (selected.length === 0) { alert("Select at least one recipient"); return; }
+      const encodedMsg = encodeURIComponent(message);
+      for (let number of selected) {
+        let clean = number.replace(/\D/g, '');
+        if (clean.startsWith('0')) clean = clean.substring(1);
+        window.open(`https://wa.me/${clean}?text=${encodedMsg}`, '_blank');
+      }
+      close();
+      alert(`Message sent to ${selected.length} employee(s) – WhatsApp tabs opened.`);
+    });
+    document.getElementById("broadcastModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("broadcastModal")) close(); });
+  };
+
+  // ------------------------- OWNER -------------------------
+  function addCompany(name, email, logoURL, address, password) {
+    if (!name) { alert("Company name required"); return false; }
+    if (!email) { alert("Company email required"); return false; }
+    if (!password) { alert("Company password required"); return false; }
+    companies.push({ 
+      id: generateId(), 
+      name: name.trim(), 
+      email: email.trim(), 
+      logoDataURL: logoURL || "https://placehold.co/200x80?text=Logo", 
+      address: address || "",
+      password: password
+    });
     saveCompanies();
     renderApp();
+    return true;
   }
   function deleteCompany(companyId) {
     if (confirm("Delete company and ALL its data?")) {
@@ -137,11 +415,33 @@
     }
   }
 
-  // ------------------------- EMPLOYEE MANAGEMENT -------------------------
-  function addEmployee(name, email, password, role) {
+  function exportAllCompaniesToExcel() {
+    const allCompaniesData = companies.map(c => ({
+      "Company ID": c.id,
+      "Company Name": c.name,
+      "Company Email": c.email,
+      "Company Password": c.password,
+      "Address": c.address,
+      "Logo URL": c.logoDataURL
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allCompaniesData), "Companies");
+    XLSX.writeFile(wb, `All_Companies_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  // ------------------------- COMPANY ADMIN -------------------------
+  function addEmployee(name, email, password, role, designation, whatsapp) {
     if (!name || !email || !password) return alert("All fields required");
     if (employees.find(e => e.email === email)) return alert("Email already exists in this company");
-    employees.push({ id: generateId(), name: name.trim(), email: email.trim(), password: password, role });
+    employees.push({ 
+      id: generateId(), 
+      name: name.trim(), 
+      email: email.trim(), 
+      password: password, 
+      role: role === "admin" ? "admin" : "employee",
+      designation: designation || (role === "admin" ? "Company Administrator" : "Staff"),
+      whatsapp: whatsapp || ""
+    });
     saveCompanyData(currentCompanyId);
     renderApp();
   }
@@ -169,139 +469,193 @@
     renderApp();
   }
 
-  // ------------------------- EXCEL (full import/export) -------------------------
-  function exportToExcel() {
-    const empData = employees.map(e => ({ ID: e.id, "Full Name": e.name, Email: e.email, Role: e.role, Password: e.password }));
+  function exportCompanyToExcel() {
+    const company = companies.find(c => c.id === currentCompanyId);
+    const empData = employees.map(e => ({ 
+      ID: e.id, "Full Name": e.name, Email: e.email, Role: e.role, 
+      Designation: e.designation, WhatsApp: e.whatsapp, Password: e.password 
+    }));
     const tasksData = tasks.map(t => {
       const emp = employees.find(e => e.id === t.employeeId);
       return { Employee: emp ? emp.name : "Deleted", Date: t.date, Task: t.taskText, Status: t.status === "leave" ? "Leave / Absent" : "Present" };
     });
+    const companyInfo = [{ "Company Name": company?.name, "Company Email": company?.email, "Logo URL": company?.logoDataURL, "Address": company?.address }];
     const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(companyInfo), "Company");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(empData), "Employees");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tasksData), "Tasks");
-    XLSX.writeFile(wb, `TaskFlow_${companies.find(c=>c.id===currentCompanyId)?.name || "Company"}_${new Date().toISOString().slice(0,10)}.xlsx`);
-  }
-  function importExcel(file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      let importedEmps = [], importedTasksRaw = [];
-      const empSheet = workbook.Sheets["Employees"];
-      if (empSheet) {
-        const rows = XLSX.utils.sheet_to_json(empSheet);
-        importedEmps = rows.map(row => ({
-          id: row["ID"] || generateId(),
-          name: row["Full Name"] || "Imported",
-          email: row["Email"] || `temp${Date.now()}@mail.com`,
-          password: row["Password"] || "pass123",
-          role: row["Role"] === "admin" ? "admin" : "employee"
-        }));
-      }
-      const taskSheet = workbook.Sheets["Tasks"];
-      if (taskSheet) {
-        const rows = XLSX.utils.sheet_to_json(taskSheet);
-        importedTasksRaw = rows.map(row => ({
-          employeeName: row["Employee"] || "",
-          date: row["Date"] || new Date().toISOString().slice(0,10),
-          taskText: row["Task"] || "",
-          status: row["Status"] === "Leave / Absent" ? "leave" : "present"
-        }));
-      }
-      if (importedEmps.length && confirm("⚠️ Replace all current company data?")) {
-        employees = importedEmps;
-        const newTasks = [];
-        for (let rt of importedTasksRaw) {
-          const match = employees.find(e => e.name === rt.employeeName);
-          if (match) newTasks.push({ id: generateId(), employeeId: match.id, date: rt.date, taskText: rt.taskText, status: rt.status });
-        }
-        tasks = newTasks;
-        if (!employees.some(e => e.role === "admin")) employees.push({ id: generateId(), name: "Admin", email: "admin@company.com", password: "admin123", role: "admin" });
-        saveCompanyData(currentCompanyId);
-        alert("✅ Import successful!");
-        renderApp();
-      } else alert("Invalid Excel file or missing 'Employees' sheet.");
-    };
-    reader.readAsArrayBuffer(file);
+    XLSX.writeFile(wb, `TaskFlow_${company?.name || "Company"}_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  // ------------------------- RENDER UI -------------------------
-  function renderApp() {
-    const root = document.getElementById("appRoot");
-    if (!currentUser) {
-      if (!companies.length) { root.innerHTML = renderNoCompany(); attachNoCompanyEvents(); return; }
-      root.innerHTML = renderLoginScreen();
-      attachLoginEvents();
-      return;
-    }
-    if (currentUser.role === "super") { root.innerHTML = renderSuperDashboard(); attachSuperEvents(); return; }
-    if (currentUser.role === "admin") { root.innerHTML = renderAdminDashboard(); attachAdminEvents(); }
-    else if (currentUser.role === "employee") { root.innerHTML = renderEmployeeDashboard(); attachEmployeeEvents(); }
-  }
-
-  function renderNoCompany() {
-    return `<div class="max-w-md mx-auto mt-16 glass-panel p-8 text-center"><i class="fas fa-building text-5xl"></i><h2 class="text-2xl font-bold mt-2">No Companies</h2><button id="ownerSetupBtn" class="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-xl">Owner Login</button></div>`;
-  }
-  function attachNoCompanyEvents() {
-    document.getElementById("ownerSetupBtn")?.addEventListener("click", () => {
-      const e = prompt("Owner email:"), p = prompt("Password:");
-      if (e === SUPER_EMAIL && p === SUPER_PASSWORD) loginSuper(e, p);
-      else alert("Invalid");
-    });
-  }
-
+  // ------------------------- RENDER LOGIN -------------------------
   function renderLoginScreen() {
-    const opts = companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-    return `
-      <div class="max-w-5xl mx-auto mt-12">
-        <div class="text-center mb-8"><i class="fas fa-tasks text-5xl text-indigo-600"></i><h1 class="text-3xl font-bold">TaskFlow Pro</h1><p class="text-gray-500">Multi‑Company Task Manager</p></div>
-        <div class="grid md:grid-cols-2 gap-8">
-          <div class="glass-panel rounded-3xl p-8"><div class="text-center"><i class="fas fa-user-shield text-4xl text-indigo-600"></i><h2 class="text-2xl font-bold mt-2">Admin Login</h2></div>
-            <form id="adminLoginForm" class="space-y-4 mt-4"><select id="adminCompanyId" class="w-full border rounded-xl px-3 py-2" required><option value="">-- Select Company --</option>${opts}</select><input type="email" id="adminEmail" placeholder="Email" class="w-full border rounded-xl px-3 py-2"><input type="password" id="adminPassword" placeholder="Password" class="w-full border rounded-xl px-3 py-2"><button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-xl">Login as Admin</button></form></div>
-          <div class="glass-panel rounded-3xl p-8"><div class="text-center"><i class="fas fa-user-check text-4xl text-emerald-600"></i><h2 class="text-2xl font-bold mt-2">Employee Login</h2></div>
-            <form id="employeeLoginForm" class="space-y-4 mt-4"><select id="employeeCompanyId" class="w-full border rounded-xl px-3 py-2" required><option value="">-- Select Company --</option>${opts}</select><input type="email" id="employeeEmail" placeholder="Email" class="w-full border rounded-xl px-3 py-2"><input type="password" id="employeePassword" placeholder="Password" class="w-full border rounded-xl px-3 py-2"><button type="submit" class="w-full bg-emerald-600 text-white py-2 rounded-xl">Login as Employee</button></form></div>
+    if (!loginRole) {
+      return `
+        <div class="max-w-5xl mx-auto mt-12">
+          <div class="text-center mb-8"><i class="fas fa-tasks text-5xl text-indigo-600"></i><h1 class="text-3xl font-bold mt-2">TaskFlow Pro</h1><p class="text-gray-500">Multi‑Role Task Management</p></div>
+          <div class="grid md:grid-cols-3 gap-6">
+            <div class="glass-panel rounded-3xl p-6 text-center role-card" data-role="super">
+              <i class="fas fa-crown text-4xl text-amber-500"></i><h2 class="text-2xl font-bold mt-2">Super Admin</h2><p class="text-gray-500 text-sm">Owner · Create companies</p>
+            </div>
+            <div class="glass-panel rounded-3xl p-6 text-center role-card" data-role="companyAdmin">
+              <i class="fas fa-building text-4xl text-indigo-500"></i><h2 class="text-2xl font-bold mt-2">Company Admin</h2><p class="text-gray-500 text-sm">Manage your company</p>
+            </div>
+            <div class="glass-panel rounded-3xl p-6 text-center role-card" data-role="employee">
+              <i class="fas fa-user-check text-4xl text-emerald-500"></i><h2 class="text-2xl font-bold mt-2">Employee</h2><p class="text-gray-500 text-sm">Daily tasks</p>
+            </div>
+          </div>
         </div>
-        <div class="text-center mt-6"><button id="ownerLoginLink" class="underline text-xs">Owner Login</button></div>
-      </div>
-    `;
+      `;
+    } else if (loginRole === 'super') {
+      return `
+        <div class="max-w-md mx-auto mt-16 glass-panel rounded-3xl p-8 fade-in">
+          <div class="text-center mb-6"><i class="fas fa-crown text-4xl text-amber-500"></i><h2 class="text-2xl font-bold mt-2">Super Admin Login</h2></div>
+          <div class="space-y-4">
+            <input type="email" id="superEmail" placeholder="Email" class="w-full border rounded-xl px-3 py-2">
+            <input type="password" id="superPassword" placeholder="Password" class="w-full border rounded-xl px-3 py-2">
+            <button onclick="handleSuperLogin()" class="w-full bg-indigo-600 text-white py-2 rounded-xl">Login</button>
+            <button onclick="goBackToRoleSelect()" class="w-full text-xs underline mt-2">← Back</button>
+          </div>
+        </div>
+      `;
+    } else if (loginRole === 'companyAdmin') {
+      return `
+        <div class="max-w-md mx-auto mt-16 glass-panel rounded-3xl p-8 fade-in">
+          <div class="text-center mb-6"><i class="fas fa-building text-4xl text-indigo-500"></i><h2 class="text-2xl font-bold mt-2">Company Admin Login</h2><p class="text-sm text-gray-500">Use company email & password</p></div>
+          <div class="space-y-4">
+            <input type="email" id="compAdminEmail" placeholder="Company Email" class="w-full border rounded-xl px-3 py-2" required>
+            <input type="password" id="compAdminPassword" placeholder="Company Password" class="w-full border rounded-xl px-3 py-2" required>
+            <button onclick="handleCompanyAdminLogin()" class="w-full bg-indigo-600 text-white py-2 rounded-xl">Login as Company Admin</button>
+            <button onclick="goBackToRoleSelect()" class="w-full text-xs underline mt-2">← Back</button>
+          </div>
+        </div>
+      `;
+    } else if (loginRole === 'employee') {
+      return `
+        <div class="max-w-md mx-auto mt-16 glass-panel rounded-3xl p-8 fade-in">
+          <div class="text-center mb-6"><i class="fas fa-user-check text-4xl text-emerald-500"></i><h2 class="text-2xl font-bold mt-2">Employee Login</h2></div>
+          <div class="space-y-4">
+            <input type="email" id="empCompanyEmail" placeholder="Company Email" class="w-full border rounded-xl px-3 py-2" required>
+            <input type="email" id="empEmail" placeholder="Your Email" class="w-full border rounded-xl px-3 py-2" required>
+            <input type="password" id="empPassword" placeholder="Your Password" class="w-full border rounded-xl px-3 py-2" required>
+            <button onclick="handleEmployeeLogin()" class="w-full bg-emerald-600 text-white py-2 rounded-xl">Login as Employee</button>
+            <button onclick="goBackToRoleSelect()" class="w-full text-xs underline mt-2">← Back</button>
+          </div>
+        </div>
+      `;
+    }
   }
+
   function attachLoginEvents() {
-    document.getElementById("adminLoginForm")?.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const cid = document.getElementById("adminCompanyId").value, email = document.getElementById("adminEmail").value, pwd = document.getElementById("adminPassword").value;
-      if (!cid) return alert("Select company");
-      if (!loginToCompany(cid, email, pwd)) alert("Invalid credentials");
-    });
-    document.getElementById("employeeLoginForm")?.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const cid = document.getElementById("employeeCompanyId").value, email = document.getElementById("employeeEmail").value, pwd = document.getElementById("employeePassword").value;
-      if (!cid) return alert("Select company");
-      if (!loginToCompany(cid, email, pwd)) alert("Invalid credentials");
-    });
-    document.getElementById("ownerLoginLink")?.addEventListener("click", () => {
-      const e = prompt("Owner email:"), p = prompt("Password:");
-      if (e === SUPER_EMAIL && p === SUPER_PASSWORD) loginSuper(e, p);
-      else alert("Invalid");
+    document.querySelectorAll("[data-role]").forEach(el => {
+      el.addEventListener("click", (e) => {
+        loginRole = el.getAttribute("data-role");
+        renderApp();
+      });
     });
   }
 
+  // ------------------------- SUPER ADMIN DASHBOARD -------------------------
   function renderSuperDashboard() {
     return `
-      <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8 fade-in"><div class="flex justify-between items-center mb-6"><h2 class="text-2xl font-bold"><i class="fas fa-crown text-amber-500"></i> Owner Dashboard</h2><button id="superLogout" class="border px-4 py-2 rounded-xl">Logout</button></div>
-      <button id="addCompanyBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl mb-6">+ Add Company</button>
-      <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${companies.map(c => `<div class="bg-white/70 rounded-2xl p-4"><div class="flex justify-between"><div><i class="fas fa-building text-indigo-500"></i><h3 class="font-bold">${c.name}</h3></div><button class="deleteCompanyBtn text-red-500" data-id="${c.id}"><i class="fas fa-trash"></i></button></div><p class="text-sm">${c.address || ''}</p></div>`).join('')}</div></div>
+      <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8 fade-in">
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+          <h2 class="text-2xl font-bold"><i class="fas fa-crown text-amber-500"></i> Super Admin Dashboard</h2>
+          <div class="flex gap-2">
+            <button id="changeCredsBtn" class="bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-key"></i> Change Credentials</button>
+            <button id="exportAllCompanies" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export All Companies</button>
+            <button id="superLogout" class="border px-4 py-2 rounded-xl">Logout</button>
+          </div>
+        </div>
+        <button id="addCompanyBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl mb-6">+ Add Company</button>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${companies.map(c => `
+          <div class="bg-white/70 rounded-2xl p-4 hover:shadow-lg transition-all">
+            <div class="flex justify-between items-start">
+              <div class="flex items-center gap-3"><img src="${c.logoDataURL}" class="company-logo" onerror="this.src='https://placehold.co/200x80?text=Logo'"><div><h3 class="font-bold">${c.name}</h3><p class="text-xs text-gray-500">${c.email}</p></div></div>
+              <button class="deleteCompanyBtn text-red-500" data-id="${c.id}"><i class="fas fa-trash"></i></button>
+            </div>
+            <p class="text-sm text-gray-600 mt-2">${c.address || "No address"}</p>
+          </div>
+        `).join('')}</div>
+      </div>
       <div id="modalContainer"></div>
     `;
   }
   function attachSuperEvents() {
     document.getElementById("superLogout")?.addEventListener("click", logout);
-    document.getElementById("addCompanyBtn")?.addEventListener("click", () => {
-      const name = prompt("Company name"); if(name) addCompany(name, "", "");
-    });
+    document.getElementById("exportAllCompanies")?.addEventListener("click", exportAllCompaniesToExcel);
+    document.getElementById("addCompanyBtn")?.addEventListener("click", showAddCompanyModal);
+    document.getElementById("changeCredsBtn")?.addEventListener("click", () => window.showChangeSuperCredsModal());
     document.querySelectorAll(".deleteCompanyBtn").forEach(btn => btn.addEventListener("click", (e) => deleteCompany(btn.dataset.id)));
   }
 
-  // ------------------------- ADMIN DASHBOARD (with stats & filters) -------------------------
+  function showAddCompanyModal() {
+    const modalHtml = `
+      <div id="companyModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl transform transition-all">
+          <h3 class="text-2xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-building"></i> Add Company</h3>
+          <div class="space-y-3">
+            <input type="text" id="compName" placeholder="Company Name *" class="w-full border rounded-xl px-3 py-2">
+            <input type="email" id="compEmail" placeholder="Company Email *" class="w-full border rounded-xl px-3 py-2">
+            <input type="password" id="compPassword" placeholder="Company Password *" class="w-full border rounded-xl px-3 py-2">
+            <input type="url" id="compLogoURL" placeholder="Logo URL (e.g., https://placehold.co/200x80?text=Logo)" class="w-full border rounded-xl px-3 py-2">
+            <textarea id="compAddress" placeholder="Address (optional)" rows="2" class="w-full border rounded-xl px-3 py-2"></textarea>
+            <div class="flex justify-end gap-3 mt-4">
+              <button type="button" id="closeCompModal" class="px-4 py-2 border rounded-xl">Cancel</button>
+              <button type="button" id="createCompanyBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-xl">Create Company</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const container = document.getElementById("modalContainer");
+    container.innerHTML = modalHtml;
+    const closeModal = () => container.innerHTML = '';
+    document.getElementById("closeCompModal")?.addEventListener("click", closeModal);
+    document.getElementById("createCompanyBtn")?.addEventListener("click", () => {
+      const name = document.getElementById("compName").value;
+      const email = document.getElementById("compEmail").value;
+      const password = document.getElementById("compPassword").value;
+      const logoURL = document.getElementById("compLogoURL").value;
+      const address = document.getElementById("compAddress").value;
+      addCompany(name, email, logoURL, address, password);
+      closeModal();
+    });
+    document.getElementById("companyModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("companyModal")) closeModal(); });
+  }
+
+  window.showChangeSuperCredsModal = function() {
+    const modalHtml = `
+      <div id="credsModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl transform transition-all">
+          <h3 class="text-2xl font-bold mb-4">Change Super Admin Credentials</h3>
+          <div class="space-y-3">
+            <input type="email" id="newSuperEmail" placeholder="New Email" class="w-full border rounded-xl px-3 py-2" value="${SUPER_EMAIL}">
+            <input type="password" id="newSuperPassword" placeholder="New Password" class="w-full border rounded-xl px-3 py-2">
+            <div class="flex justify-end gap-3 mt-4">
+              <button type="button" id="closeCredsModal" class="px-4 py-2 border rounded-xl">Cancel</button>
+              <button type="button" id="saveCredsBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-xl">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const container = document.getElementById("modalContainer");
+    container.innerHTML = modalHtml;
+    const close = () => container.innerHTML = '';
+    document.getElementById("closeCredsModal")?.addEventListener("click", close);
+    document.getElementById("saveCredsBtn")?.addEventListener("click", () => {
+      const newEmail = document.getElementById("newSuperEmail").value;
+      const newPwd = document.getElementById("newSuperPassword").value;
+      if (!newEmail || !newPwd) { alert("Both email and password required"); return; }
+      saveSuperCredentials(newEmail, newPwd);
+      alert("Credentials updated! Use new email/password next login.");
+      close();
+    });
+    document.getElementById("credsModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("credsModal")) close(); });
+  };
+
+  // ------------------------- ADMIN DASHBOARD (with broadcast + settings + clean tables) -------------------------
   let adminSelectedDate = new Date().toISOString().slice(0,10);
   let adminTaskFilter = 'all';
   function getFilteredEmployees() {
@@ -319,25 +673,51 @@
     const filtered = getFilteredEmployees();
     return `
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8 fade-in">
-        <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><div><h2 class="text-2xl font-bold">Admin Dashboard · ${company?.name}</h2><p class="text-gray-500">Welcome, ${currentUser.name}</p></div><div class="flex gap-2"><button id="exportBtn" class="bg-gray-800 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><label class="bg-gray-800 text-white px-3 py-1.5 rounded-xl text-sm cursor-pointer"><i class="fas fa-upload"></i> Import<input type="file" id="importInput" accept=".xlsx,.xls" class="hidden"></label><button id="logoutAdmin" class="border px-3 py-1.5 rounded-xl">Logout</button></div></div>
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+          <div class="flex items-center gap-3"><img src="${company?.logoDataURL}" class="company-logo" onerror="this.src='https://placehold.co/200x80?text=Logo'"><div><h2 class="text-2xl font-bold">Admin · ${company?.name}</h2><p class="text-gray-500 text-sm">${company?.email} | ${company?.address || ""}</p><p class="text-xs text-gray-400">Welcome, ${currentUser.name} (${currentUser.designation || "Admin"})</p></div></div>
+          <div class="flex gap-2">
+            <button onclick="showBroadcastModal()" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fab fa-whatsapp"></i> Broadcast</button>
+            <button onclick="showProfileSettings()" class="settings-btn text-gray-600 hover:text-indigo-600 transition text-2xl"><i class="fas fa-cog"></i></button>
+            <button id="exportCompanyExcel" class="bg-gray-800 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button>
+            <button id="logoutAdmin" class="border px-3 py-1.5 rounded-xl">Logout</button>
+          </div>
+        </div>
         <div class="mb-6 flex flex-wrap gap-3"><button id="addEmpBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl"><i class="fas fa-user-plus"></i> Add Employee</button><div class="flex items-center gap-2 bg-white/50 p-2 rounded-xl"><i class="fas fa-calendar-alt"></i><input type="date" id="dateFilter" value="${adminSelectedDate}" class="border-0 bg-transparent"></div></div>
-        <div class="bg-white/70 rounded-2xl p-4 mb-8"><h3 class="font-bold text-lg mb-3">Team Members</h3><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr class="border-b"><th class="text-left py-2 px-4">Name</th><th class="text-left py-2 px-4">Email</th><th class="text-left py-2 px-4">Role</th><th class="text-right py-2 px-4">Action</th></tr></thead><tbody>${employees.map(emp => `<tr class="border-b hover:bg-gray-50"><td class="py-1 px-4">${emp.name}${emp.role==='admin'?' 👑':''}</td><td class="py-1 px-4">${emp.email}</td><td class="py-1 px-4"><span class="bg-gray-100 px-2 py-0.5 rounded-full text-xs">${emp.role}</span></td><td class="py-1 px-4 text-right"><button class="deleteEmp text-red-500" data-id="${emp.id}"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div></div>
+        <div class="bg-white/70 rounded-2xl p-4 mb-8"><h3 class="font-bold text-lg mb-3">Team Members</h3><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr class="border-b"><th class="text-left py-2 px-4">Name</th><th class="text-left py-2 px-4">Email</th><th class="text-left py-2 px-4">Designation</th><th class="text-left py-2 px-4">WhatsApp</th><th class="text-left py-2 px-4">Role</th><th class="text-right py-2 px-4">Actions</th>}</thead><tbody>${employees.map(emp => `
+          <tr class="data-row border-b">
+            <td class="py-1 px-4">${emp.name}${emp.role==='admin'?' 👑':''}${emp.id === currentUser?.id ? ' (you)' : ''}</td>
+            <td class="py-1 px-4">${emp.email}</td>
+            <td class="py-1 px-4">${emp.designation || "—"}</td>
+            <td class="py-1 px-4">${emp.whatsapp ? emp.whatsapp : '—'}</td>
+            <td class="py-1 px-4"><span class="bg-gray-100 px-2 py-0.5 rounded-full text-xs">${emp.role}</span></td>
+            <td class="py-1 px-4 text-right">
+              ${emp.whatsapp ? `<button onclick="openWhatsApp('${emp.whatsapp}')" class="text-green-600 hover:text-green-800 mr-2"><i class="fab fa-whatsapp text-lg"></i></button>` : ''}
+              ${emp.id !== currentUser?.id ? `<button class="deleteEmp text-red-500" data-id="${emp.id}"><i class="fas fa-trash-alt"></i></button>` : ''}
+            </td>
+          </tr>
+        `).join('')}</tbody>}</div></div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <div class="stats-card ${adminTaskFilter==='all'?'active':''}" data-filter="all"><div class="text-2xl font-bold text-indigo-600">${total}</div><div class="text-xs">Total Employees</div></div>
           <div class="stats-card ${adminTaskFilter==='submitted'?'active':''}" data-filter="submitted"><div class="text-2xl font-bold text-emerald-600">${submitted}</div><div class="text-xs">Tasks Submitted</div></div>
           <div class="stats-card ${adminTaskFilter==='pending'?'active':''}" data-filter="pending"><div class="text-2xl font-bold text-amber-600">${pending}</div><div class="text-xs">Pending</div></div>
           <div class="stats-card ${adminTaskFilter==='inprogress'?'active':''}" data-filter="inprogress"><div class="text-2xl font-bold text-blue-600">${inProgress}</div><div class="text-xs">In Progress</div></div>
         </div>
-        <div class="bg-white rounded-2xl shadow-sm overflow-hidden"><div class="px-6 py-3 border-b bg-gray-50"><h3 class="font-semibold">Tasks for ${adminSelectedDate}</h3></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="py-2 px-4 text-left">Employee</th><th class="py-2 px-4 text-left">Task</th><th class="py-2 px-4">Status</th><th class="py-2 px-4 text-center">Submitted</th></tr></thead><tbody>${filtered.map(emp => { const t = dayTasks.find(d => d.employeeId === emp.id); const has = !!t; return `<tr class="border-b"><td class="py-1 px-4">${emp.name}</td><td class="py-1 px-4">${t ? t.taskText.substring(0,80) : '—'}</td><td class="py-1 px-4"><span class="px-2 py-0.5 rounded-full text-xs ${t ? (t.status==='leave'?'bg-rose-100 text-rose-700':'bg-emerald-100 text-emerald-700') : 'bg-gray-100'}">${t ? (t.status==='leave'?'Leave':'Present') : 'No task'}</span></td><td class="py-1 px-4 text-center"><input type="checkbox" ${has ? 'checked' : ''} disabled></td></tr>` }).join('')}</tbody></table></div></div>
-        <div class="text-xs text-center text-gray-400 mt-6">📊 Click on stat cards to filter table • 📅 Use date picker to view other days</div>
+        <div class="bg-white rounded-2xl overflow-hidden">
+          <div class="px-6 py-3 border-b bg-gray-50"><h3 class="font-semibold">Tasks for ${adminSelectedDate}</h3></div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50"><tr><th class="py-2 px-4 text-left">Employee</th><th class="py-2 px-4 text-left">Task</th><th class="py-2 px-4">Status</th><th class="py-2 px-4 text-center">Submitted</th><tr></thead>
+              <tbody>${filtered.map(emp => { const t = dayTasks.find(d => d.employeeId === emp.id); const has = !!t; return `<tr class="data-row"><td class="py-1 px-4">${emp.name}<br><span class="text-xs text-gray-400">${emp.designation || ""}</span></td><td class="py-1 px-4">${t ? t.taskText.substring(0,80) : '—'}</td><td class="py-1 px-4"><span class="px-2 py-0.5 rounded-full text-xs ${t ? (t.status==='leave'?'bg-rose-100 text-rose-700':'bg-emerald-100 text-emerald-700') : 'bg-gray-100'}">${t ? (t.status==='leave'?'Leave':'Present') : 'No task'}</span></td><td class="py-1 px-4 text-center"><input type="checkbox" ${has ? 'checked' : ''} disabled></td></tr>` }).join('')}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="text-xs text-center text-gray-400 mt-6">📊 Click on stat cards to filter table • 📅 Use date picker • 📢 Broadcast: send message to many employees</div>
       </div>
       <div id="modalContainer"></div>
     `;
   }
   function attachAdminEvents() {
-    document.getElementById("exportBtn")?.addEventListener("click", exportToExcel);
-    const importFile = document.getElementById("importInput");
-    if (importFile) importFile.onchange = (e) => { if(e.target.files[0]) importExcel(e.target.files[0]); e.target.value = ''; };
+    document.getElementById("exportCompanyExcel")?.addEventListener("click", exportCompanyToExcel);
     document.getElementById("logoutAdmin")?.addEventListener("click", logout);
     document.getElementById("addEmpBtn")?.addEventListener("click", showAddEmployeeModal);
     document.querySelectorAll(".deleteEmp").forEach(btn => btn.addEventListener("click", (e) => { const id = btn.getAttribute("data-id"); if(confirm("Delete employee and tasks?")) deleteEmployee(id); }));
@@ -346,22 +726,48 @@
     document.querySelectorAll(".stats-card").forEach(card => card.addEventListener("click", () => { adminTaskFilter = card.dataset.filter; renderApp(); }));
   }
   function showAddEmployeeModal() {
-    const modalHtml = `<div id="empModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm"><div class="bg-white rounded-2xl p-6 w-full max-w-md"><h3 class="text-xl font-bold mb-4">Add Employee</h3><form id="addEmpForm"><div class="mb-3"><input type="text" id="empName" placeholder="Full Name" class="w-full border rounded-xl px-3 py-2" required></div><div class="mb-3"><input type="email" id="empEmail" placeholder="Email" class="w-full border rounded-xl px-3 py-2" required></div><div class="mb-3"><input type="password" id="empPassword" placeholder="Password" class="w-full border rounded-xl px-3 py-2" required></div><div class="mb-4"><select id="empRole" class="w-full border rounded-xl px-3 py-2"><option value="employee">Employee</option><option value="admin">Admin</option></select></div><div class="flex justify-end gap-3"><button type="button" id="closeModalBtn" class="px-4 py-2 border rounded-xl">Cancel</button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-xl">Create</button></div></form></div></div>`;
+    const modalHtml = `
+      <div id="empModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+          <h3 class="text-xl font-bold mb-4">Add Employee</h3>
+          <div class="space-y-3">
+            <input type="text" id="empName" placeholder="Full Name *" class="w-full border rounded-xl px-3 py-2">
+            <input type="email" id="empEmail" placeholder="Email *" class="w-full border rounded-xl px-3 py-2">
+            <input type="password" id="empPassword" placeholder="Password *" class="w-full border rounded-xl px-3 py-2">
+            <input type="text" id="empDesignation" placeholder="Designation (e.g., Web Developer)" class="w-full border rounded-xl px-3 py-2">
+            <input type="tel" id="empWhatsapp" placeholder="WhatsApp number (with country code, e.g., 923001234567)" class="w-full border rounded-xl px-3 py-2">
+            <select id="empRole" class="w-full border rounded-xl px-3 py-2">
+              <option value="employee">Employee</option>
+              <option value="admin">Admin</option>
+            </select>
+            <div class="flex justify-end gap-3 mt-4">
+              <button type="button" id="closeModalBtn" class="px-4 py-2 border rounded-xl">Cancel</button>
+              <button type="button" id="createEmpBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-xl">Create</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
     const container = document.getElementById("modalContainer");
     container.innerHTML = modalHtml;
     const close = () => container.innerHTML = '';
     document.getElementById("closeModalBtn")?.addEventListener("click", close);
-    document.getElementById("addEmpForm")?.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const name = document.getElementById("empName").value, email = document.getElementById("empEmail").value, pwd = document.getElementById("empPassword").value, role = document.getElementById("empRole").value;
-      addEmployee(name, email, pwd, role);
+    document.getElementById("createEmpBtn")?.addEventListener("click", () => {
+      const name = document.getElementById("empName").value;
+      const email = document.getElementById("empEmail").value;
+      const pwd = document.getElementById("empPassword").value;
+      const role = document.getElementById("empRole").value;
+      const designation = document.getElementById("empDesignation").value;
+      const whatsapp = document.getElementById("empWhatsapp").value;
+      addEmployee(name, email, pwd, role, designation, whatsapp);
       close();
     });
     document.getElementById("empModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("empModal")) close(); });
   }
 
-  // ------------------------- EMPLOYEE DASHBOARD (with stats) -------------------------
+  // ------------------------- EMPLOYEE DASHBOARD -------------------------
   function renderEmployeeDashboard() {
+    const company = companies.find(c => c.id === currentCompanyId);
     const today = new Date().toISOString().slice(0,10);
     const myTasks = getEmployeeTasks(currentUser.id);
     const todayTask = tasks.find(t => t.employeeId === currentUser.id && t.date === today);
@@ -371,10 +777,29 @@
     const totalTasks = myTasks.length, leaveDays = myTasks.filter(t => t.status === "leave").length, presentDays = totalTasks - leaveDays;
     return `
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8 max-w-4xl mx-auto fade-in">
-        <div class="flex justify-between items-center mb-6"><div><h2 class="text-2xl font-bold">Welcome, ${currentUser.name}</h2><p class="text-gray-500">${companies.find(c=>c.id===currentCompanyId)?.name}</p></div><button id="employeeLogoutBtn" class="border px-4 py-2 rounded-xl">Logout</button></div>
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+          <div class="flex items-center gap-3"><img src="${company?.logoDataURL}" class="company-logo" onerror="this.src='https://placehold.co/200x80?text=Logo'"><div><h2 class="text-2xl font-bold">Welcome, ${currentUser.name}</h2><p class="text-gray-500">${company?.name} · ${currentUser.designation || "Employee"}</p><p class="text-xs text-gray-400">${company?.email} | ${company?.address || ""}</p></div></div>
+          <div class="flex gap-3">
+            <button onclick="showProfileSettings()" class="settings-btn text-gray-600 hover:text-indigo-600 transition text-2xl"><i class="fas fa-cog"></i></button>
+            <button id="employeeLogoutBtn" class="border px-4 py-2 rounded-xl">Logout</button>
+          </div>
+        </div>
         <div class="bg-gradient-to-br from-indigo-50 to-sky-50 rounded-2xl p-5 mb-8"><div class="flex justify-between items-center mb-2"><h3 class="font-semibold text-lg">Today's Task · ${today}</h3><div class="flex items-center gap-2"><i class="fas fa-check-circle text-green-600"></i><span class="text-sm">Task submitted: ${hasSubmitted ? '✅ Yes' : '❌ No'}</span></div></div><form id="employeeTaskForm"><textarea id="taskDesc" rows="3" class="w-full border rounded-xl p-3" placeholder="Describe your work...">${taskValue.replace(/</g, '&lt;')}</textarea><div class="flex items-center gap-4 my-4"><label class="flex items-center gap-2"><input type="checkbox" id="leaveCheckbox" ${isLeave ? 'checked' : ''}> <i class="fas fa-umbrella-beach"></i> On Leave / Absent today</label></div><button type="submit" class="bg-indigo-600 text-white px-5 py-2 rounded-xl"><i class="fas fa-save"></i> Save Task</button></form></div>
-        <h3 class="font-bold text-xl mb-3">My History</h3><div class="overflow-x-auto rounded-xl border bg-white/50 mb-6"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Status</th></tr></thead><tbody>${myTasks.map(tsk => `<tr class="border-b"><td class="px-4 py-2">${tsk.date}</td><td class="px-4 py-2">${tsk.taskText.substring(0,100)}</td><td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs ${tsk.status==='leave'?'bg-rose-100':'bg-emerald-100'}">${tsk.status==='leave'?'Leave':'Present'}</span></td></tr>`).join('')}${!myTasks.length ? '<tr><td colspan="3" class="text-center py-4">No tasks yet</td></tr>' : ''}</tbody></table></div>
-        <div class="grid md:grid-cols-3 gap-4"><div class="stats-card"><div class="text-2xl font-bold text-indigo-600">${totalTasks}</div><div class="text-xs">Total Tasks</div></div><div class="stats-card"><div class="text-2xl font-bold text-emerald-600">${presentDays}</div><div class="text-xs">Present Days</div></div><div class="stats-card"><div class="text-2xl font-bold text-rose-500">${leaveDays}</div><div class="text-xs">Leave Days</div></div></div>
+        <h3 class="font-bold text-xl mb-3">My History</h3>
+        <div class="overflow-x-auto rounded-xl border bg-white/50 mb-6">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Status</th></tr></thead>
+            <tbody>
+              ${myTasks.map(tsk => `<tr class="data-row"><td class="px-4 py-2">${tsk.date}</td><td class="px-4 py-2">${tsk.taskText.substring(0,100)}</td><td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs ${tsk.status==='leave'?'bg-rose-100':'bg-emerald-100'}">${tsk.status==='leave'?'Leave':'Present'}</span></td></tr>`).join('')}
+              ${!myTasks.length ? '<tr><td colspan="3" class="text-center py-4">No tasks yet</td>' : ''}
+            </tbody>
+          </table>
+        </div>
+        <div class="grid md:grid-cols-3 gap-4">
+          <div class="stats-card"><div class="text-2xl font-bold text-indigo-600">${totalTasks}</div><div class="text-xs">Total Tasks</div></div>
+          <div class="stats-card"><div class="text-2xl font-bold text-emerald-600">${presentDays}</div><div class="text-xs">Present Days</div></div>
+          <div class="stats-card"><div class="text-2xl font-bold text-rose-500">${leaveDays}</div><div class="text-xs">Leave Days</div></div>
+        </div>
       </div>
     `;
   }
@@ -399,7 +824,19 @@
     });
   }
 
-  // ------------------------- BOOTSTRAP -------------------------
+  function renderApp() {
+    const root = document.getElementById("appRoot");
+    if (!currentUser) {
+      root.innerHTML = renderLoginScreen();
+      attachLoginEvents();
+      return;
+    }
+    if (currentUser.role === "super") { root.innerHTML = renderSuperDashboard(); attachSuperEvents(); return; }
+    if (currentUser.role === "admin") { root.innerHTML = renderAdminDashboard(); attachAdminEvents(); return; }
+    if (currentUser.role === "employee") { root.innerHTML = renderEmployeeDashboard(); attachEmployeeEvents(); return; }
+  }
+
+  loadSuperCredentials();
   loadCompanies();
   loadSession();
   renderApp();
