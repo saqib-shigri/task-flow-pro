@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>TaskFlow Pro | Mobile Fixed</title>
+  <title>TaskFlow Pro | Supabase Cloud</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    * { font-family: 'Inter', system-ui, sans-serif; }
+    * { font-family: 'Inter', sans-serif; }
     body { background: radial-gradient(circle at 10% 30%, #f0f4ff, #e6edfa); background-attachment: fixed; }
     .glass-panel { background: rgba(255,255,255,0.92); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.5); transition: transform 0.35s; }
     .glass-panel:hover { transform: translateY(-6px) rotateX(2deg); box-shadow: 0 25px 40px -12px rgba(0,0,0,0.2); }
@@ -26,206 +27,210 @@
 <div id="appRoot" class="max-w-7xl mx-auto"></div>
 
 <script>
-  // ======================= STORAGE KEYS =======================
-  const STORAGE_COMPANIES = "taskflow_companies";
-  const STORAGE_EMPLOYEES_PREFIX = "taskflow_employees_";
-  const STORAGE_TASKS_PREFIX = "taskflow_tasks_";
-  const SESSION_USER = "taskflow_logged_user";
-  const SUPER_CREDENTIALS = "taskflow_super_creds";
+  // ======================= SUPABASE CONFIG =======================
+  const SUPABASE_URL = 'https://hnwzafpphviyoggpmuey.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhud3phZnBwaHZpeW9nZ3BtdWV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3OTk0NjMsImV4cCI6MjA5MzM3NTQ2M30.jIY7bCiKIrRwHEVvDk8Nqpj47BAsSMajbZs77eVoaJU';
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  let companies = [];
+  let currentUser = null;
   let currentCompanyId = null;
   let employees = [];
   let tasks = [];
-  let currentUser = null;
+  let companies = [];
   let loginRole = null;
 
-  let SUPER_EMAIL = "super@taskflow.com";
-  let SUPER_PASSWORD = "super123";
+  const SUPER_EMAIL = "super@taskflow.com";
+  const SUPER_PASSWORD = "super123";
 
-  function loadSuperCredentials() {
-    const stored = localStorage.getItem(SUPER_CREDENTIALS);
-    if (stored) {
-      const creds = JSON.parse(stored);
-      SUPER_EMAIL = creds.email;
-      SUPER_PASSWORD = creds.password;
-    } else {
-      localStorage.setItem(SUPER_CREDENTIALS, JSON.stringify({ email: SUPER_EMAIL, password: SUPER_PASSWORD }));
-    }
-  }
-  function saveSuperCredentials(email, password) {
-    SUPER_EMAIL = email;
-    SUPER_PASSWORD = password;
-    localStorage.setItem(SUPER_CREDENTIALS, JSON.stringify({ email: SUPER_EMAIL, password: SUPER_PASSWORD }));
+  // Helper: get current Supabase session user
+  async function getCurrentUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
   }
 
-  const generateId = () => Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-
-  // ------------------------- DATA LOAD / SAVE -------------------------
-  function loadCompanies() {
-    const stored = localStorage.getItem(STORAGE_COMPANIES);
-    companies = stored ? JSON.parse(stored) : [];
-    if (!companies.length) {
-      companies.push({ 
-        id: generateId(), 
-        name: "Demo Corp", 
-        email: "demo@democorp.com", 
-        logoDataURL: "https://placehold.co/200x80?text=Demo+Corp", 
-        address: "123 Business Street",
-        password: "demo123"
-      });
-      saveCompanies();
-    }
-  }
-  function saveCompanies() { localStorage.setItem(STORAGE_COMPANIES, JSON.stringify(companies)); }
-
-  function loadCompanyData(companyId) {
-    const empKey = STORAGE_EMPLOYEES_PREFIX + companyId;
-    const taskKey = STORAGE_TASKS_PREFIX + companyId;
-    employees = JSON.parse(localStorage.getItem(empKey) || '[]');
-    tasks = JSON.parse(localStorage.getItem(taskKey) || '[]');
-    if (!employees.length && companies.find(c => c.id === companyId)) {
-      const admin = { id: generateId(), name: "Admin", email: "admin@company.com", password: "admin123", role: "admin", designation: "Company Administrator", whatsapp: "" };
-      const emp = { id: generateId(), name: "Employee", email: "employee@company.com", password: "emp123", role: "employee", designation: "Software Developer", whatsapp: "923001234567" };
-      employees.push(admin, emp);
-      const today = new Date().toISOString().slice(0,10);
-      tasks.push({ id: generateId(), employeeId: emp.id, date: today, taskText: "Welcome task – get started", status: "present" });
-      saveCompanyData(companyId);
-    }
-  }
-  function saveCompanyData(companyId) {
-    localStorage.setItem(STORAGE_EMPLOYEES_PREFIX + companyId, JSON.stringify(employees));
-    localStorage.setItem(STORAGE_TASKS_PREFIX + companyId, JSON.stringify(tasks));
+  // ======================= DATA LOADING =======================
+  async function loadCompanies() {
+    const { data, error } = await supabase.from('companies').select('*');
+    if (!error) companies = data;
   }
 
-  function setCurrentCompany(companyId) {
+  async function loadEmployeeData(employeeId) {
+    const { data: emp, error: empErr } = await supabase
+      .from('employees')
+      .select('*')
+      .eq('id', employeeId)
+      .single();
+    if (empErr) return;
+    currentCompanyId = emp.company_id;
+    // load all employees and tasks for this company
+    const { data: allEmps } = await supabase
+      .from('employees')
+      .select('*')
+      .eq('company_id', currentCompanyId);
+    employees = allEmps || [];
+    const { data: allTasks } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('company_id', currentCompanyId);
+    tasks = allTasks || [];
+  }
+
+  async function loadCompanyEmployeesAndTasks(companyId) {
     currentCompanyId = companyId;
-    loadCompanyData(companyId);
+    const { data: allEmps } = await supabase
+      .from('employees')
+      .select('*')
+      .eq('company_id', companyId);
+    employees = allEmps || [];
+    const { data: allTasks } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('company_id', companyId);
+    tasks = allTasks || [];
   }
 
-  // Force initialization of all companies' data (to avoid empty on first mobile visit)
-  function initAllCompaniesData() {
-    for (let company of companies) {
-      const empKey = STORAGE_EMPLOYEES_PREFIX + company.id;
-      let emps = JSON.parse(localStorage.getItem(empKey) || '[]');
-      if (!emps.length) {
-        const admin = { id: generateId(), name: "Admin", email: "admin@company.com", password: "admin123", role: "admin", designation: "Company Administrator", whatsapp: "" };
-        const emp = { id: generateId(), name: "Employee", email: "employee@company.com", password: "emp123", role: "employee", designation: "Software Developer", whatsapp: "923001234567" };
-        emps = [admin, emp];
-        localStorage.setItem(empKey, JSON.stringify(emps));
-        const taskKey = STORAGE_TASKS_PREFIX + company.id;
-        const today = new Date().toISOString().slice(0,10);
-        const tasksArr = [{ id: generateId(), employeeId: emp.id, date: today, taskText: "Welcome task – get started", status: "present" }];
-        localStorage.setItem(taskKey, JSON.stringify(tasksArr));
-      }
-    }
-  }
-
-  // ------------------------- SESSION -------------------------
-  function setSession(user, companyId = null) {
-    currentUser = user;
-    if (user) {
-      const sessionData = { user, companyId: companyId || currentCompanyId };
-      sessionStorage.setItem(SESSION_USER, JSON.stringify(sessionData));
-      if (companyId) setCurrentCompany(companyId);
-    } else {
-      sessionStorage.removeItem(SESSION_USER);
-      currentCompanyId = null;
-      currentUser = null;
-    }
-  }
-
-  function loadSession() {
-    const raw = sessionStorage.getItem(SESSION_USER);
-    if (raw) {
-      try {
-        const { user, companyId } = JSON.parse(raw);
-        if (companyId && companies.find(c => c.id === companyId)) {
-          currentCompanyId = companyId;
-          loadCompanyData(companyId);
-          if (employees.find(e => e.id === user.id)) currentUser = user;
-          else currentUser = null;
-        } else currentUser = null;
-      } catch(e) { currentUser = null; }
-    } else currentUser = null;
-  }
-
-  // ------------------------- LOGIN (3 roles) -------------------------
-  function loginSuper(email, password) {
-    if (email === SUPER_EMAIL && password === SUPER_PASSWORD) {
-      setSession({ id: "super", name: "System Owner", email: SUPER_EMAIL, role: "super" }, null);
+  // ======================= AUTH =======================
+  async function loginSuper(email, pwd) {
+    if (email === SUPER_EMAIL && pwd === SUPER_PASSWORD) {
+      currentUser = { uid: "super", email: SUPER_EMAIL, role: "super", name: "System Owner" };
+      await loadCompanies();
       renderApp();
       return true;
     }
     return false;
   }
 
-  function loginCompanyAdmin(companyEmail, companyPassword) {
-    const company = companies.find(c => c.email === companyEmail);
-    if (!company) return false;
-    if (company.password !== companyPassword) return false;
-    setCurrentCompany(company.id);
-    let adminUser = employees.find(e => e.role === "admin");
-    if (!adminUser) {
-      adminUser = { id: generateId(), name: "Company Admin", email: companyEmail, password: companyPassword, role: "admin", designation: "Company Administrator", whatsapp: "" };
-      employees.push(adminUser);
-      saveCompanyData(company.id);
-    }
-    setSession(adminUser, company.id);
-    return true;
-  }
-
-  function loginEmployee(companyEmail, email, password) {
-    const company = companies.find(c => c.email === companyEmail);
-    if (!company) return false;
-    setCurrentCompany(company.id);
-    const user = employees.find(e => e.email === email && e.password === password && e.role === "employee");
-    if (user) {
-      setSession(user, company.id);
+  async function loginToCompany(companyId, email, pwd) {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password: pwd });
+      if (error) throw error;
+      const user = data.user;
+      // verify employee belongs to selected company
+      const { data: emp, error: empErr } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (empErr || emp.company_id !== companyId) {
+        await supabase.auth.signOut();
+        alert("Not authorized for this company");
+        return false;
+      }
+      currentUser = { uid: user.id, email: user.email, role: emp.role, name: emp.name };
+      await loadEmployeeData(user.id);
+      renderApp();
       return true;
+    } catch (err) {
+      alert(`Login failed: ${err.message}`);
+      return false;
     }
-    return false;
   }
 
-  function logout() { setSession(null); renderApp(); }
-
-  // Global handlers (for inline onclick)
-  window.handleSuperLogin = function() {
-    const email = document.getElementById("superEmail").value;
-    const pwd = document.getElementById("superPassword").value;
-    if (loginSuper(email, pwd)) { loginRole = null; renderApp(); }
-    else alert("Invalid super admin credentials");
-  };
-  window.handleCompanyAdminLogin = function() {
-    const email = document.getElementById("compAdminEmail").value;
-    const pwd = document.getElementById("compAdminPassword").value;
-    if (loginCompanyAdmin(email, pwd)) { loginRole = null; renderApp(); }
-    else alert("Invalid company credentials");
-  };
-  window.handleEmployeeLogin = function() {
-    const companyEmail = document.getElementById("empCompanyEmail").value;
-    const email = document.getElementById("empEmail").value;
-    const pwd = document.getElementById("empPassword").value;
-    if (loginEmployee(companyEmail, email, pwd)) { loginRole = null; renderApp(); }
-    else alert("Invalid employee credentials");
-  };
-  window.goBackToRoleSelect = function() {
-    loginRole = null;
+  async function logout() {
+    if (currentUser && currentUser.uid !== "super") await supabase.auth.signOut();
+    else currentUser = null;
     renderApp();
-  };
-  window.openWhatsApp = function(number) {
-    if (!number) { alert("No WhatsApp number"); return; }
-    let clean = number.replace(/\D/g, '');
-    if (clean.startsWith('0')) clean = clean.substring(1);
-    window.open(`https://wa.me/${clean}`, '_blank');
-  };
+  }
 
-  // ------------------------- PROFILE SETTINGS -------------------------
+  // ======================= SUPER ADMIN OPS =======================
+  async function addCompany(name, email, logoURL, address, password) {
+    if (!name || !email || !password) return alert("All fields required");
+    const { error } = await supabase
+      .from('companies')
+      .insert({ name, email, logo_url: logoURL, address, password });
+    if (error) alert(error.message);
+    else await loadCompanies();
+    renderApp();
+  }
+
+  async function deleteCompany(companyId) {
+    if (confirm("Delete company and all its data?")) {
+      const { error } = await supabase.from('companies').delete().eq('id', companyId);
+      if (error) alert(error.message);
+      await loadCompanies();
+      renderApp();
+    }
+  }
+
+  async function exportAllCompaniesToExcel() {
+    const data = companies.map(c => ({ "Company Name": c.name, "Company Email": c.email, "Password": c.password, "Address": c.address, "Logo URL": c.logo_url }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Companies");
+    XLSX.writeFile(wb, `All_Companies_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  // ======================= ADMIN OPS =======================
+  async function addEmployee(name, email, password, role, designation, whatsapp) {
+    if (!name || !email || !password) return alert("All fields required");
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email, password,
+      });
+      if (authError) throw authError;
+      const userId = authData.user.id;
+      const { error: insertError } = await supabase
+        .from('employees')
+        .insert({ id: userId, name, email, role, designation, whatsapp, company_id: currentCompanyId });
+      if (insertError) throw insertError;
+      await loadCompanyEmployeesAndTasks(currentCompanyId);
+      renderApp();
+    } catch (err) { alert(err.message); }
+  }
+
+  async function deleteEmployee(empId) {
+    if (currentUser.uid === empId) return alert("Cannot delete yourself");
+    const { error } = await supabase.from('employees').delete().eq('id', empId);
+    if (error) alert(error.message);
+    await loadCompanyEmployeesAndTasks(currentCompanyId);
+    renderApp();
+  }
+
+  async function exportCompanyToExcel() {
+    const empData = employees.map(e => ({ Name: e.name, Email: e.email, Role: e.role, Designation: e.designation, WhatsApp: e.whatsapp }));
+    const taskData = tasks.map(t => {
+      const emp = employees.find(e => e.id === t.employee_id);
+      return { Employee: emp?.name, Date: t.date, Task: t.task_text, Status: t.status === "leave" ? "Leave" : "Present" };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(empData), "Employees");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(taskData), "Tasks");
+    XLSX.writeFile(wb, `TaskFlow_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  // ======================= TASKS OPS =======================
+  async function saveOrUpdateTask(empId, date, text, status) {
+    const existing = tasks.find(t => t.employee_id === empId && t.date === date);
+    if (existing) {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ task_text: text, status })
+        .eq('id', existing.id);
+      if (error) alert(error.message);
+    } else {
+      const { error } = await supabase
+        .from('tasks')
+        .insert({ employee_id: empId, company_id: currentCompanyId, date, task_text: text, status });
+      if (error) alert(error.message);
+    }
+    await loadCompanyEmployeesAndTasks(currentCompanyId);
+    renderApp();
+  }
+
+  function getEmployeeTasks(empId) {
+    return tasks.filter(t => t.employee_id === empId).sort((a,b) => b.date.localeCompare(a.date));
+  }
+
+  function getTasksByDate(date) {
+    return tasks.filter(t => t.date === date).map(t => {
+      const emp = employees.find(e => e.id === t.employee_id);
+      return { ...t, employeeName: emp ? emp.name : "Deleted" };
+    });
+  }
+
+  // ======================= PROFILE SETTINGS =======================
   window.showProfileSettings = function() {
     const isAdmin = currentUser.role === "admin";
-    const designationField = isAdmin ? '' : `
-      <div><label class="block text-sm font-medium mb-1">Designation</label><input type="text" id="editDesignation" class="w-full border rounded-xl px-3 py-2" value="${(currentUser.designation || '').replace(/</g, '&lt;')}"></div>
-    `;
+    const designationField = isAdmin ? '' : `<div><label class="block text-sm font-medium mb-1">Designation</label><input type="text" id="editDesignation" class="w-full border rounded-xl px-3 py-2" value="${(currentUser.designation || '').replace(/</g, '&lt;')}"></div>`;
     const modalHtml = `
       <div id="profileModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
         <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -247,35 +252,35 @@
     container.innerHTML = modalHtml;
     const close = () => container.innerHTML = '';
     document.getElementById("closeProfileModal")?.addEventListener("click", close);
-    document.getElementById("saveProfileBtn")?.addEventListener("click", () => {
+    document.getElementById("saveProfileBtn")?.addEventListener("click", async () => {
       const newName = document.getElementById("editName").value.trim();
       const newEmail = document.getElementById("editEmail").value.trim();
       const newPwd = document.getElementById("editPassword").value;
       const newDesig = isAdmin ? null : document.getElementById("editDesignation")?.value.trim();
       if (!newName || !newEmail) { alert("Name and email required"); return; }
-      const idx = employees.findIndex(e => e.id === currentUser.id);
-      if (idx !== -1) {
-        employees[idx].name = newName;
-        employees[idx].email = newEmail;
-        if (newPwd) employees[idx].password = newPwd;
-        if (!isAdmin && newDesig) employees[idx].designation = newDesig;
-        saveCompanyData(currentCompanyId);
-        currentUser.name = newName;
-        currentUser.email = newEmail;
-        if (newPwd) currentUser.password = newPwd;
-        if (!isAdmin && newDesig) currentUser.designation = newDesig;
-        setSession(currentUser, currentCompanyId);
-        alert("Profile updated!");
-        close();
-        renderApp();
-      } else alert("User not found");
+      // update in Supabase
+      const updateObj = { name: newName, email: newEmail };
+      if (!isAdmin && newDesig) updateObj.designation = newDesig;
+      const { error } = await supabase.from('employees').update(updateObj).eq('id', currentUser.uid);
+      if (error) { alert(error.message); return; }
+      if (newPwd) {
+        const { error: pwdError } = await supabase.auth.updateUser({ password: newPwd });
+        if (pwdError) alert(pwdError.message);
+      }
+      currentUser.name = newName;
+      currentUser.email = newEmail;
+      if (!isAdmin && newDesig) currentUser.designation = newDesig;
+      await loadCompanyEmployeesAndTasks(currentCompanyId);
+      alert("Profile updated!");
+      close();
+      renderApp();
     });
     document.getElementById("profileModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("profileModal")) close(); });
   };
 
-  // ------------------------- BROADCAST WHATSAPP -------------------------
+  // ======================= BROADCAST WHATSAPP =======================
   window.showBroadcastModal = function() {
-    const empList = employees.filter(e => e.whatsapp && e.whatsapp.trim() && e.id !== currentUser.id);
+    const empList = employees.filter(e => e.whatsapp && e.whatsapp.trim() && e.id !== currentUser.uid);
     if (!empList.length) { alert("No employees with WhatsApp numbers"); return; }
     const modalHtml = `
       <div id="broadcastModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
@@ -311,75 +316,14 @@
     document.getElementById("broadcastModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("broadcastModal")) close(); });
   };
 
-  // ------------------------- OWNER OPERATIONS -------------------------
-  function addCompany(name, email, logoURL, address, password) {
-    if (!name || !email || !password) return alert("All fields required");
-    companies.push({ id: generateId(), name: name.trim(), email: email.trim(), logoDataURL: logoURL || "https://placehold.co/200x80?text=Logo", address: address || "", password });
-    saveCompanies();
-    renderApp();
-  }
-  function deleteCompany(companyId) {
-    if (confirm("Delete company and all data?")) {
-      companies = companies.filter(c => c.id !== companyId);
-      localStorage.removeItem(STORAGE_EMPLOYEES_PREFIX + companyId);
-      localStorage.removeItem(STORAGE_TASKS_PREFIX + companyId);
-      saveCompanies();
-      if (currentCompanyId === companyId) currentCompanyId = null;
-      renderApp();
-    }
-  }
-  function exportAllCompaniesToExcel() {
-    const data = companies.map(c => ({ "Company Name": c.name, "Company Email": c.email, "Password": c.password, "Address": c.address, "Logo URL": c.logoDataURL }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Companies");
-    XLSX.writeFile(wb, `All_Companies_${new Date().toISOString().slice(0,10)}.xlsx`);
-  }
+  window.openWhatsApp = function(number) {
+    if (!number) { alert("No WhatsApp number"); return; }
+    let clean = number.replace(/\D/g, '');
+    if (clean.startsWith('0')) clean = clean.substring(1);
+    window.open(`https://wa.me/${clean}`, '_blank');
+  };
 
-  // ------------------------- COMPANY ADMIN -------------------------
-  function addEmployee(name, email, password, role, designation, whatsapp) {
-    if (!name || !email || !password) return alert("All fields required");
-    if (employees.find(e => e.email === email)) return alert("Email already exists");
-    employees.push({ id: generateId(), name, email, password, role: role === "admin" ? "admin" : "employee", designation: designation || (role === "admin" ? "Company Admin" : "Staff"), whatsapp: whatsapp || "" });
-    saveCompanyData(currentCompanyId);
-    renderApp();
-  }
-  function deleteEmployee(empId) {
-    if (currentUser.id === empId) return alert("Cannot delete yourself");
-    employees = employees.filter(e => e.id !== empId);
-    tasks = tasks.filter(t => t.employeeId !== empId);
-    saveCompanyData(currentCompanyId);
-    renderApp();
-  }
-
-  // ------------------------- TASKS -------------------------
-  function getEmployeeTasks(empId) { return tasks.filter(t => t.employeeId === empId).sort((a,b) => b.date.localeCompare(a.date)); }
-  function getTasksByDate(date) {
-    return tasks.filter(t => t.date === date).map(t => {
-      const emp = employees.find(e => e.id === t.employeeId);
-      return { ...t, employeeName: emp ? emp.name : "Deleted" };
-    });
-  }
-  function saveOrUpdateTask(employeeId, date, taskText, status) {
-    const idx = tasks.findIndex(t => t.employeeId === employeeId && t.date === date);
-    if (idx !== -1) tasks[idx] = { ...tasks[idx], taskText, status };
-    else tasks.push({ id: generateId(), employeeId, date, taskText, status });
-    saveCompanyData(currentCompanyId);
-    renderApp();
-  }
-  function exportCompanyToExcel() {
-    const company = companies.find(c => c.id === currentCompanyId);
-    const empData = employees.map(e => ({ Name: e.name, Email: e.email, Role: e.role, Designation: e.designation, WhatsApp: e.whatsapp }));
-    const taskData = tasks.map(t => {
-      const emp = employees.find(e => e.id === t.employeeId);
-      return { Employee: emp?.name, Date: t.date, Task: t.taskText, Status: t.status === "leave" ? "Leave" : "Present" };
-    });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(empData), "Employees");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(taskData), "Tasks");
-    XLSX.writeFile(wb, `TaskFlow_${company?.name || "Company"}_${new Date().toISOString().slice(0,10)}.xlsx`);
-  }
-
-  // ------------------------- RENDER LOGIN SCREEN -------------------------
+  // ======================= RENDER UI =======================
   function renderLoginScreen() {
     if (!loginRole) {
       return `
@@ -396,7 +340,7 @@
       return `<div class="max-w-md mx-auto mt-16 glass-panel rounded-3xl p-8"><h2 class="text-2xl font-bold text-center">Super Admin Login</h2><div class="space-y-4 mt-4"><input type="email" id="superEmail" placeholder="Email" class="w-full border rounded-xl px-3 py-2"><input type="password" id="superPassword" placeholder="Password" class="w-full border rounded-xl px-3 py-2"><button onclick="handleSuperLogin()" class="w-full bg-indigo-600 text-white py-2 rounded-xl">Login</button><button onclick="goBackToRoleSelect()" class="w-full text-xs underline">← Back</button></div></div>`;
     } else if (loginRole === 'companyAdmin') {
       return `<div class="max-w-md mx-auto mt-16 glass-panel rounded-3xl p-8"><h2 class="text-2xl font-bold text-center">Company Admin Login</h2><p class="text-center text-sm text-gray-500">Use company email & password</p><div class="space-y-4 mt-4"><input type="email" id="compAdminEmail" placeholder="Company Email" class="w-full border rounded-xl px-3 py-2"><input type="password" id="compAdminPassword" placeholder="Company Password" class="w-full border rounded-xl px-3 py-2"><button onclick="handleCompanyAdminLogin()" class="w-full bg-indigo-600 text-white py-2 rounded-xl">Login</button><button onclick="goBackToRoleSelect()" class="w-full text-xs underline">← Back</button></div></div>`;
-    } else if (loginRole === 'employee') {
+    } else {
       return `<div class="max-w-md mx-auto mt-16 glass-panel rounded-3xl p-8"><h2 class="text-2xl font-bold text-center">Employee Login</h2><div class="space-y-4 mt-4"><input type="email" id="empCompanyEmail" placeholder="Company Email" class="w-full border rounded-xl px-3 py-2"><input type="email" id="empEmail" placeholder="Your Email" class="w-full border rounded-xl px-3 py-2"><input type="password" id="empPassword" placeholder="Your Password" class="w-full border rounded-xl px-3 py-2"><button onclick="handleEmployeeLogin()" class="w-full bg-emerald-600 text-white py-2 rounded-xl">Login</button><button onclick="goBackToRoleSelect()" class="w-full text-xs underline">← Back</button></div></div>`;
     }
   }
@@ -410,56 +354,68 @@
     });
   }
 
-  // ------------------------- SUPER ADMIN DASHBOARD -------------------------
+  window.handleSuperLogin = async function() {
+    const email = document.getElementById("superEmail").value;
+    const pwd = document.getElementById("superPassword").value;
+    if (await loginSuper(email, pwd)) loginRole = null;
+    else alert("Invalid super admin credentials");
+  };
+  window.handleCompanyAdminLogin = async function() {
+    const email = document.getElementById("compAdminEmail").value;
+    const pwd = document.getElementById("compAdminPassword").value;
+    const cid = (await supabase.from('companies').select('id').eq('email', email).single()).data?.id;
+    if (!cid) return alert("Company not found");
+    if (await loginToCompany(cid, email, pwd)) loginRole = null;
+  };
+  window.handleEmployeeLogin = async function() {
+    const companyEmail = document.getElementById("empCompanyEmail").value;
+    const email = document.getElementById("empEmail").value;
+    const pwd = document.getElementById("empPassword").value;
+    const { data: company } = await supabase.from('companies').select('id').eq('email', companyEmail).single();
+    if (!company) return alert("Company not found");
+    if (await loginToCompany(company.id, email, pwd)) loginRole = null;
+  };
+  window.goBackToRoleSelect = function() {
+    loginRole = null;
+    renderApp();
+  };
+
   function renderSuperDashboard() {
     return `
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8">
-        <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><h2 class="text-2xl font-bold"><i class="fas fa-crown text-amber-500"></i> Super Admin Dashboard</h2><div class="flex gap-2"><button id="changeCredsBtn" class="bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-key"></i> Change Credentials</button><button id="exportAllCompanies" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><button id="superLogout" class="border px-4 py-2 rounded-xl">Logout</button></div></div>
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><h2 class="text-2xl font-bold"><i class="fas fa-crown text-amber-500"></i> Super Admin Dashboard</h2><div class="flex gap-2"><button id="exportAllCompanies" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><button id="superLogout" class="border px-4 py-2 rounded-xl">Logout</button></div></div>
         <button id="addCompanyBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl mb-6">+ Add Company</button>
-        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${companies.map(c => `<div class="bg-white/70 rounded-2xl p-4"><div class="flex justify-between"><div class="flex items-center gap-3"><img src="${c.logoDataURL}" class="company-logo"> <div><h3 class="font-bold">${c.name}</h3><p class="text-xs text-gray-500">${c.email}</p></div></div><button class="deleteCompanyBtn text-red-500" data-id="${c.id}"><i class="fas fa-trash"></i></button></div><p class="text-sm text-gray-600 mt-2">${c.address || ""}</p></div>`).join('')}</div>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${companies.map(c => `<div class="bg-white/70 rounded-2xl p-4"><div class="flex justify-between"><div class="flex items-center gap-3"><img src="${c.logo_url}" class="company-logo"> <div><h3 class="font-bold">${c.name}</h3><p class="text-xs text-gray-500">${c.email}</p></div></div><button class="deleteCompanyBtn text-red-500" data-id="${c.id}"><i class="fas fa-trash"></i></button></div><p class="text-sm text-gray-600 mt-2">${c.address || ""}</p></div>`).join('')}</div>
       </div>
       <div id="modalContainer"></div>
     `;
   }
+
   function attachSuperEvents() {
     document.getElementById("superLogout")?.addEventListener("click", logout);
     document.getElementById("exportAllCompanies")?.addEventListener("click", exportAllCompaniesToExcel);
-    document.getElementById("addCompanyBtn")?.addEventListener("click", showAddCompanyModal);
-    document.getElementById("changeCredsBtn")?.addEventListener("click", () => {
-      const newEmail = prompt("New email:", SUPER_EMAIL);
-      const newPwd = prompt("New password:");
-      if (newEmail && newPwd) { saveSuperCredentials(newEmail, newPwd); alert("Credentials updated!"); }
+    document.getElementById("addCompanyBtn")?.addEventListener("click", () => {
+      const name = prompt("Company name");
+      const email = prompt("Company email");
+      const password = prompt("Company password");
+      const logo = prompt("Logo URL (optional)");
+      const address = prompt("Address (optional)");
+      if (name && email && password) addCompany(name, email, logo, address, password);
     });
     document.querySelectorAll(".deleteCompanyBtn").forEach(btn => btn.addEventListener("click", (e) => deleteCompany(btn.dataset.id)));
   }
 
-  function showAddCompanyModal() {
-    const modalHtml = `
-      <div id="companyModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm"><div class="bg-white rounded-2xl p-6 w-full max-w-md"><h3 class="text-2xl font-bold mb-4">Add Company</h3><div class="space-y-3"><input type="text" id="compName" placeholder="Company Name *" class="w-full border rounded-xl px-3 py-2"><input type="email" id="compEmail" placeholder="Company Email *" class="w-full border rounded-xl px-3 py-2"><input type="password" id="compPassword" placeholder="Company Password *" class="w-full border rounded-xl px-3 py-2"><input type="url" id="compLogoURL" placeholder="Logo URL" class="w-full border rounded-xl px-3 py-2"><textarea id="compAddress" placeholder="Address" rows="2" class="w-full border rounded-xl px-3 py-2"></textarea><div class="flex justify-end gap-3"><button id="closeCompModal" class="px-4 py-2 border rounded-xl">Cancel</button><button id="createCompanyBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-xl">Create</button></div></div></div></div>
-    `;
-    const container = document.getElementById("modalContainer");
-    container.innerHTML = modalHtml;
-    const close = () => container.innerHTML = '';
-    document.getElementById("closeCompModal")?.addEventListener("click", close);
-    document.getElementById("createCompanyBtn")?.addEventListener("click", () => {
-      const name = document.getElementById("compName").value, email = document.getElementById("compEmail").value, pwd = document.getElementById("compPassword").value, logo = document.getElementById("compLogoURL").value, addr = document.getElementById("compAddress").value;
-      addCompany(name, email, logo, addr, pwd);
-      close();
-    });
-    document.getElementById("companyModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("companyModal")) close(); });
-  }
-
-  // ------------------------- ADMIN DASHBOARD -------------------------
   let adminSelectedDate = new Date().toISOString().slice(0,10);
   let adminTaskFilter = 'all';
   function getFilteredEmployees() {
     const dayTasks = getTasksByDate(adminSelectedDate);
     if (adminTaskFilter === 'all') return employees;
-    if (adminTaskFilter === 'submitted') return employees.filter(e => dayTasks.some(t => t.employeeId === e.id));
-    if (adminTaskFilter === 'pending') return employees.filter(e => !dayTasks.some(t => t.employeeId === e.id));
-    if (adminTaskFilter === 'inprogress') return employees.filter(e => { const t = dayTasks.find(d => d.employeeId === e.id); return t && t.status === 'present'; });
+    if (adminTaskFilter === 'submitted') return employees.filter(e => dayTasks.some(t => t.employee_id === e.id));
+    if (adminTaskFilter === 'pending') return employees.filter(e => !dayTasks.some(t => t.employee_id === e.id));
+    if (adminTaskFilter === 'inprogress') return employees.filter(e => { const t = dayTasks.find(d => d.employee_id === e.id); return t && t.status === 'present'; });
     return employees;
   }
+
   function renderAdminDashboard() {
     const company = companies.find(c => c.id === currentCompanyId);
     const dayTasks = getTasksByDate(adminSelectedDate);
@@ -467,21 +423,22 @@
     const filtered = getFilteredEmployees();
     return `
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8">
-        <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><div class="flex items-center gap-3"><img src="${company?.logoDataURL}" class="company-logo"> <div><h2 class="text-2xl font-bold">Admin · ${company?.name}</h2><p class="text-gray-500 text-sm">${company?.email} | ${company?.address || ""}</p><p class="text-xs text-gray-400">Welcome, ${currentUser.name} (${currentUser.designation || "Admin"})</p></div></div><div class="flex gap-2"><button onclick="showBroadcastModal()" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fab fa-whatsapp"></i> Broadcast</button><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="exportCompanyExcel" class="bg-gray-800 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><button id="logoutAdmin" class="border px-3 py-1.5 rounded-xl">Logout</button></div></div>
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><div class="flex items-center gap-3"><img src="${company?.logo_url}" class="company-logo"> <div><h2 class="text-2xl font-bold">Admin · ${company?.name}</h2><p class="text-gray-500 text-sm">${company?.email}</p><p class="text-xs text-gray-400">Welcome, ${currentUser.name}</p></div></div><div class="flex gap-2"><button onclick="showBroadcastModal()" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fab fa-whatsapp"></i> Broadcast</button><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="exportCompanyExcel" class="bg-gray-800 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><button id="logoutAdmin" class="border px-3 py-1.5 rounded-xl">Logout</button></div></div>
         <div class="mb-6 flex flex-wrap gap-3"><button id="addEmpBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl"><i class="fas fa-user-plus"></i> Add Employee</button><div class="flex items-center gap-2 bg-white/50 p-2 rounded-xl"><i class="fas fa-calendar-alt"></i><input type="date" id="dateFilter" value="${adminSelectedDate}" class="border-0 bg-transparent"></div></div>
-        <div class="bg-white/70 rounded-2xl p-4 mb-8"><h3 class="font-bold text-lg mb-3">Team Members</h3><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="text-left py-2 px-4">Name</th><th class="text-left py-2 px-4">Email</th><th class="text-left py-2 px-4">Designation</th><th class="text-left py-2 px-4">WhatsApp</th><th class="text-left py-2 px-4">Role</th><th class="text-right py-2 px-4">Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td class="py-1 px-4">${emp.name}${emp.role==='admin'?' 👑':''}${emp.id === currentUser?.id ? ' (you)' : ''}</td><td class="py-1 px-4">${emp.email}</td><td class="py-1 px-4">${emp.designation || "—"}</td><td class="py-1 px-4">${emp.whatsapp || "—"}</td><td class="py-1 px-4"><span class="bg-gray-100 px-2 py-0.5 rounded-full text-xs">${emp.role}</span></td><td class="py-1 px-4 text-right">${emp.whatsapp ? `<button onclick="openWhatsApp('${emp.whatsapp}')" class="text-green-600 mr-2"><i class="fab fa-whatsapp text-lg"></i></button>` : ''}${emp.id !== currentUser?.id ? `<button class="deleteEmp text-red-500" data-id="${emp.id}"><i class="fas fa-trash-alt"></i></button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>
+        <div class="bg-white/70 rounded-2xl p-4 mb-8"><h3 class="font-bold text-lg mb-3">Team Members</h3><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="text-left py-2 px-4">Name</th><th class="text-left py-2 px-4">Email</th><th class="text-left py-2 px-4">Designation</th><th class="text-left py-2 px-4">WhatsApp</th><th class="text-left py-2 px-4">Role</th><th class="text-right py-2 px-4">Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td class="py-1 px-4">${emp.name}${emp.role==='admin'?' 👑':''}${emp.id === currentUser?.uid ? ' (you)' : ''}</td><td class="py-1 px-4">${emp.email}</td><td class="py-1 px-4">${emp.designation || "—"}</td><td class="py-1 px-4">${emp.whatsapp || "—"}</td><td class="py-1 px-4"><span class="bg-gray-100 px-2 py-0.5 rounded-full text-xs">${emp.role}</span></td><td class="py-1 px-4 text-right">${emp.whatsapp ? `<button onclick="openWhatsApp('${emp.whatsapp}')" class="text-green-600 mr-2"><i class="fab fa-whatsapp text-lg"></i></button>` : ''}${emp.id !== currentUser?.uid ? `<button class="deleteEmp text-red-500" data-id="${emp.id}"><i class="fas fa-trash-alt"></i></button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <div class="stats-card ${adminTaskFilter==='all'?'active':''}" data-filter="all"><div class="text-2xl font-bold text-indigo-600">${total}</div><div class="text-xs">Total Employees</div></div>
           <div class="stats-card ${adminTaskFilter==='submitted'?'active':''}" data-filter="submitted"><div class="text-2xl font-bold text-emerald-600">${submitted}</div><div class="text-xs">Submitted Today</div></div>
           <div class="stats-card ${adminTaskFilter==='pending'?'active':''}" data-filter="pending"><div class="text-2xl font-bold text-amber-600">${pending}</div><div class="text-xs">Pending</div></div>
           <div class="stats-card ${adminTaskFilter==='inprogress'?'active':''}" data-filter="inprogress"><div class="text-2xl font-bold text-blue-600">${inProgress}</div><div class="text-xs">In Progress</div></div>
         </div>
-        <div class="bg-white rounded-2xl overflow-hidden"><div class="px-6 py-3 border-b bg-gray-50"><h3 class="font-semibold">Tasks for ${adminSelectedDate}</h3></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="py-2 px-4 text-left">Employee</th><th class="py-2 px-4 text-left">Task</th><th class="py-2 px-4">Status</th><th class="py-2 px-4 text-center">Submitted</th></tr></thead><tbody>${filtered.map(emp => { const t = dayTasks.find(d => d.employeeId === emp.id); return `<tr><td class="py-1 px-4">${emp.name}<br><span class="text-xs text-gray-400">${emp.designation || ""}</span></td><td class="py-1 px-4">${t ? t.taskText.substring(0,80) : '—'}</td><td class="py-1 px-4"><span class="px-2 py-0.5 rounded-full text-xs ${t ? (t.status==='leave'?'bg-rose-100':'bg-emerald-100') : 'bg-gray-100'}">${t ? (t.status==='leave'?'Leave':'Present') : 'No task'}</span></td><td class="py-1 px-4 text-center"><input type="checkbox" ${t ? 'checked' : ''} disabled></td></td>`}).join('')}</tbody></table></div></div>
+        <div class="bg-white rounded-2xl overflow-hidden"><div class="px-6 py-3 border-b bg-gray-50"><h3 class="font-semibold">Tasks for ${adminSelectedDate}</h3></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="py-2 px-4 text-left">Employee</th><th class="py-2 px-4 text-left">Task</th><th class="py-2 px-4">Status</th><th class="py-2 px-4 text-center">Submitted</th><tr></thead><tbody>${filtered.map(emp => { const t = dayTasks.find(d => d.employee_id === emp.id); return `<tr><td class="py-1 px-4">${emp.name}<br><span class="text-xs text-gray-400">${emp.designation || ""}</span></td><td class="py-1 px-4">${t ? t.task_text.substring(0,80) : '—'}</td><td class="py-1 px-4"><span class="px-2 py-0.5 rounded-full text-xs ${t ? (t.status==='leave'?'bg-rose-100':'bg-emerald-100') : 'bg-gray-100'}">${t ? (t.status==='leave'?'Leave':'Present') : 'No task'}</span></td><td class="py-1 px-4 text-center"><input type="checkbox" ${t ? 'checked' : ''} disabled></td></tr>` }).join('')}</tbody></table></div></div>
         <div class="text-xs text-center text-gray-400 mt-6">Click stat cards to filter • 📅 Date picker • 📢 Broadcast WhatsApp</div>
       </div>
       <div id="modalContainer"></div>
     `;
   }
+
   function attachAdminEvents() {
     document.getElementById("exportCompanyExcel")?.addEventListener("click", exportCompanyToExcel);
     document.getElementById("logoutAdmin")?.addEventListener("click", logout);
@@ -491,39 +448,40 @@
     if(datePicker) datePicker.addEventListener("change", (e) => { adminSelectedDate = e.target.value; adminTaskFilter = 'all'; renderApp(); });
     document.querySelectorAll(".stats-card").forEach(card => card.addEventListener("click", () => { adminTaskFilter = card.dataset.filter; renderApp(); }));
   }
+
   function showAddEmployeeModal() {
     const modalHtml = `<div id="empModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm"><div class="bg-white rounded-2xl p-6 w-full max-w-md"><h3 class="text-xl font-bold mb-4">Add Employee</h3><div class="space-y-3"><input type="text" id="empName" placeholder="Full Name *" class="w-full border rounded-xl px-3 py-2"><input type="email" id="empEmail" placeholder="Email *" class="w-full border rounded-xl px-3 py-2"><input type="password" id="empPassword" placeholder="Password *" class="w-full border rounded-xl px-3 py-2"><input type="text" id="empDesignation" placeholder="Designation" class="w-full border rounded-xl px-3 py-2"><input type="tel" id="empWhatsapp" placeholder="WhatsApp number" class="w-full border rounded-xl px-3 py-2"><select id="empRole" class="w-full border rounded-xl px-3 py-2"><option value="employee">Employee</option><option value="admin">Admin</option></select><div class="flex justify-end gap-3"><button id="closeModalBtn" class="px-4 py-2 border rounded-xl">Cancel</button><button id="createEmpBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-xl">Create</button></div></div></div></div>`;
     const container = document.getElementById("modalContainer");
     container.innerHTML = modalHtml;
     const close = () => container.innerHTML = '';
     document.getElementById("closeModalBtn")?.addEventListener("click", close);
-    document.getElementById("createEmpBtn")?.addEventListener("click", () => {
+    document.getElementById("createEmpBtn")?.addEventListener("click", async () => {
       const name = document.getElementById("empName").value, email = document.getElementById("empEmail").value, pwd = document.getElementById("empPassword").value, desig = document.getElementById("empDesignation").value, wa = document.getElementById("empWhatsapp").value, role = document.getElementById("empRole").value;
-      addEmployee(name, email, pwd, role, desig, wa);
+      await addEmployee(name, email, pwd, role, desig, wa);
       close();
     });
     document.getElementById("empModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("empModal")) close(); });
   }
 
-  // ------------------------- EMPLOYEE DASHBOARD -------------------------
   function renderEmployeeDashboard() {
     const company = companies.find(c => c.id === currentCompanyId);
     const today = new Date().toISOString().slice(0,10);
-    const myTasks = getEmployeeTasks(currentUser.id);
-    const todayTask = tasks.find(t => t.employeeId === currentUser.id && t.date === today);
-    const taskValue = todayTask ? todayTask.taskText : "";
+    const myTasks = getEmployeeTasks(currentUser.uid);
+    const todayTask = tasks.find(t => t.employee_id === currentUser.uid && t.date === today);
+    const taskValue = todayTask ? todayTask.task_text : "";
     const isLeave = todayTask ? todayTask.status === "leave" : false;
     const hasSubmitted = !!todayTask;
     const total = myTasks.length, leaveDays = myTasks.filter(t => t.status === "leave").length, present = total - leaveDays;
     return `
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8 max-w-4xl mx-auto">
-        <div class="flex flex-wrap justify-between items-center gap-3 mb-6"><div class="flex items-center gap-3"><img src="${company?.logoDataURL}" class="company-logo"> <div><h2 class="text-2xl font-bold">Welcome, ${currentUser.name}</h2><p class="text-gray-500">${company?.name} · ${currentUser.designation || "Employee"}</p><p class="text-xs text-gray-400">${company?.email} | ${company?.address || ""}</p></div></div><div class="flex gap-3"><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="employeeLogoutBtn" class="border px-4 py-2 rounded-xl">Logout</button></div></div>
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-6"><div class="flex items-center gap-3"><img src="${company?.logo_url}" class="company-logo"> <div><h2 class="text-2xl font-bold">Welcome, ${currentUser.name}</h2><p class="text-gray-500">${company?.name} · ${currentUser.designation || "Employee"}</p><p class="text-xs text-gray-400">${company?.email}</p></div></div><div class="flex gap-3"><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="employeeLogoutBtn" class="border px-4 py-2 rounded-xl">Logout</button></div></div>
         <div class="bg-gradient-to-br from-indigo-50 to-sky-50 rounded-2xl p-5 mb-8"><div class="flex justify-between items-center mb-2"><h3 class="font-semibold text-lg">Today's Task · ${today}</h3><div class="flex items-center gap-2"><i class="fas fa-check-circle text-green-600"></i><span class="text-sm">Task submitted: ${hasSubmitted ? '✅ Yes' : '❌ No'}</span></div></div><form id="employeeTaskForm"><textarea id="taskDesc" rows="3" class="w-full border rounded-xl p-3" placeholder="Describe your work...">${taskValue.replace(/</g, '&lt;')}</textarea><div class="flex items-center gap-4 my-4"><label><input type="checkbox" id="leaveCheckbox" ${isLeave ? 'checked' : ''}> <i class="fas fa-umbrella-beach"></i> On Leave / Absent today</label></div><button type="submit" class="bg-indigo-600 text-white px-5 py-2 rounded-xl">Save Task</button></form></div>
-        <h3 class="font-bold text-xl mb-3">My History</h3><div class="overflow-x-auto rounded-xl border bg-white/50 mb-6"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Status</th><tr></thead><tbody>${myTasks.map(tsk => `<tr><td class="px-4 py-2">${tsk.date}</td><td class="px-4 py-2">${tsk.taskText.substring(0,100)}</td><td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs ${tsk.status==='leave'?'bg-rose-100':'bg-emerald-100'}">${tsk.status==='leave'?'Leave':'Present'}</span></td></tr>`).join('')}${!myTasks.length ? '<td><td colspan="3" class="text-center py-4">No tasks yet</td></tr>' : ''}</tbody></table></div>
+        <h3 class="font-bold text-xl mb-3">My History</h3><div class="overflow-x-auto rounded-xl border bg-white/50 mb-6"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Status</th></tr></thead><tbody>${myTasks.map(tsk => `<tr><td class="px-4 py-2">${tsk.date}</td><td class="px-4 py-2">${tsk.task_text.substring(0,100)}</td><td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs ${tsk.status==='leave'?'bg-rose-100':'bg-emerald-100'}">${tsk.status==='leave'?'Leave':'Present'}</span></td></tr>`).join('')}${!myTasks.length ? '<tr><td colspan="3" class="text-center py-4">No tasks yet</td></tr>' : ''}</tbody></table></div>
         <div class="grid md:grid-cols-3 gap-4"><div class="stats-card"><div class="text-2xl font-bold text-indigo-600">${total}</div><div class="text-xs">Total Tasks</div></div><div class="stats-card"><div class="text-2xl font-bold text-emerald-600">${present}</div><div class="text-xs">Present Days</div></div><div class="stats-card"><div class="text-2xl font-bold text-rose-500">${leaveDays}</div><div class="text-xs">Leave Days</div></div></div>
       </div>
     `;
   }
+
   function attachEmployeeEvents() {
     const form = document.getElementById("employeeTaskForm");
     if (!form) return;
@@ -533,35 +491,47 @@
     const toggle = () => { if (leaveCheck.checked) { taskArea.value = "On Leave / Absent — No tasks"; taskArea.disabled = true; } else { if (taskArea.disabled) taskArea.value = ""; taskArea.disabled = false; } };
     leaveCheck?.addEventListener("change", toggle);
     toggle();
-    form.addEventListener("submit", (e) => {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
       let text = taskArea.value.trim();
       const date = new Date().toISOString().slice(0,10);
       let status = "present";
       if (leaveCheck.checked) { status = "leave"; if (!text) text = "Official leave"; }
       else if (!text) { alert("Please describe your task or mark leave."); return; }
-      saveOrUpdateTask(currentUser.id, date, text, status);
+      await saveOrUpdateTask(currentUser.uid, date, text, status);
       alert("✅ Task saved!");
     });
   }
 
-  function renderApp() {
+  async function renderApp() {
     const root = document.getElementById("appRoot");
     if (!currentUser) {
+      await loadCompanies();
       root.innerHTML = renderLoginScreen();
       attachLoginEvents();
       return;
     }
-    if (currentUser.role === "super") { root.innerHTML = renderSuperDashboard(); attachSuperEvents(); }
-    else if (currentUser.role === "admin") { root.innerHTML = renderAdminDashboard(); attachAdminEvents(); }
-    else if (currentUser.role === "employee") { root.innerHTML = renderEmployeeDashboard(); attachEmployeeEvents(); }
+    if (currentUser.role === "super") {
+      root.innerHTML = renderSuperDashboard();
+      attachSuperEvents();
+    } else if (currentUser.role === "admin") {
+      root.innerHTML = renderAdminDashboard();
+      attachAdminEvents();
+    } else if (currentUser.role === "employee") {
+      root.innerHTML = renderEmployeeDashboard();
+      attachEmployeeEvents();
+    }
   }
 
-  loadSuperCredentials();
-  loadCompanies();
-  initAllCompaniesData();   // <--- THIS FIXES MOBILE LOGIN ISSUE
-  loadSession();
-  renderApp();
+  // ======================= INIT =======================
+  (async () => {
+    await loadCompanies();
+    const sessionUser = await getCurrentUser();
+    if (sessionUser) {
+      await loadEmployeeData(sessionUser.id);
+    }
+    renderApp();
+  })();
 </script>
 </body>
 </html>
