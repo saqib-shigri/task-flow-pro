@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>TaskFlow Pro | Supabase Fixed</title>
+  <title>TaskFlow Pro | Supabase Cloud</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <style>
     * { font-family: 'Inter', sans-serif; }
     body { background: radial-gradient(circle at 10% 30%, #f0f4ff, #e6edfa); background-attachment: fixed; }
@@ -28,9 +28,9 @@
 
 <script>
   // ======================= SUPABASE CONFIG =======================
-  const SUPABASE_URL = 'https://hnwzafpphviyoggpmuey.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhud3phZnBwaHZpeW9nZ3BtdWV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3OTk0NjMsImV4cCI6MjA5MzM3NTQ2M30.jIY7bCiKIrRwHEVvDk8Nqpj47BAsSMajbZs77eVoaJU';
-  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabaseUrl = 'https://hnwzafpphviyoggpmuey.supabase.co';
+  const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhud3phZnBwaHZpeW9nZ3BtdWV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3OTk0NjMsImV4cCI6MjA5MzM3NTQ2M30.jIY7bCiKIrRwHEVvDk8Nqpj47BAsSMajbZs77eVoaJU';
+  const supabase = supabase.createClient(supabaseUrl, supabaseAnonKey);
 
   let currentUser = null;
   let currentCompanyId = null;
@@ -42,17 +42,16 @@
   const SUPER_EMAIL = "super@taskflow.com";
   const SUPER_PASSWORD = "super123";
 
-  // Helper: get current Supabase session user
+  // Helper: get current session user
   async function getCurrentUser() {
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   }
 
-  // ======================= DATA LOADING =======================
+  // ------------------------- DATA LOADING -------------------------
   async function loadCompanies() {
     const { data, error } = await supabase.from('companies').select('*');
-    if (!error) companies = data;
-    else console.error("loadCompanies error:", error);
+    if (!error) companies = data || [];
   }
 
   async function loadEmployeeData(employeeId) {
@@ -61,36 +60,23 @@
       .select('*')
       .eq('id', employeeId)
       .single();
-    if (empErr) return;
+    if (empErr || !emp) return;
     currentCompanyId = emp.company_id;
-    // load all employees and tasks for this company
-    const { data: allEmps } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('company_id', currentCompanyId);
+    const { data: allEmps } = await supabase.from('employees').select('*').eq('company_id', currentCompanyId);
     employees = allEmps || [];
-    const { data: allTasks } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('company_id', currentCompanyId);
+    const { data: allTasks } = await supabase.from('tasks').select('*').eq('company_id', currentCompanyId);
     tasks = allTasks || [];
   }
 
   async function loadCompanyEmployeesAndTasks(companyId) {
     currentCompanyId = companyId;
-    const { data: allEmps } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('company_id', companyId);
+    const { data: allEmps } = await supabase.from('employees').select('*').eq('company_id', companyId);
     employees = allEmps || [];
-    const { data: allTasks } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('company_id', companyId);
+    const { data: allTasks } = await supabase.from('tasks').select('*').eq('company_id', companyId);
     tasks = allTasks || [];
   }
 
-  // ======================= AUTH =======================
+  // ------------------------- AUTH -------------------------
   async function loginSuper(email, pwd) {
     if (email === SUPER_EMAIL && pwd === SUPER_PASSWORD) {
       currentUser = { uid: "super", email: SUPER_EMAIL, role: "super", name: "System Owner" };
@@ -106,18 +92,17 @@
       const { data, error } = await supabase.auth.signInWithPassword({ email, password: pwd });
       if (error) throw error;
       const user = data.user;
-      // verify employee belongs to selected company
       const { data: emp, error: empErr } = await supabase
         .from('employees')
         .select('*')
         .eq('id', user.id)
         .single();
-      if (empErr || emp.company_id !== companyId) {
+      if (empErr || !emp || emp.company_id !== companyId) {
         await supabase.auth.signOut();
         alert("Not authorized for this company");
         return false;
       }
-      currentUser = { uid: user.id, email: user.email, role: emp.role, name: emp.name };
+      currentUser = { uid: user.id, email: user.email, role: emp.role, name: emp.name, designation: emp.designation };
       await loadEmployeeData(user.id);
       renderApp();
       return true;
@@ -133,12 +118,10 @@
     renderApp();
   }
 
-  // ======================= SUPER ADMIN OPS =======================
+  // ------------------------- SUPER ADMIN OPS -------------------------
   async function addCompany(name, email, logoURL, address, password) {
     if (!name || !email || !password) return alert("All fields required");
-    const { error } = await supabase
-      .from('companies')
-      .insert({ name, email, logo_url: logoURL, address, password });
+    const { error } = await supabase.from('companies').insert({ name, email, logo_url: logoURL, address, password });
     if (error) alert(error.message);
     else await loadCompanies();
     renderApp();
@@ -160,13 +143,11 @@
     XLSX.writeFile(wb, `All_Companies_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  // ======================= ADMIN OPS =======================
+  // ------------------------- ADMIN OPS -------------------------
   async function addEmployee(name, email, password, role, designation, whatsapp) {
     if (!name || !email || !password) return alert("All fields required");
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email, password,
-      });
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) throw authError;
       const userId = authData.user.id;
       const { error: insertError } = await supabase
@@ -198,19 +179,14 @@
     XLSX.writeFile(wb, `TaskFlow_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  // ======================= TASKS OPS =======================
+  // ------------------------- TASKS OPS -------------------------
   async function saveOrUpdateTask(empId, date, text, status) {
     const existing = tasks.find(t => t.employee_id === empId && t.date === date);
     if (existing) {
-      const { error } = await supabase
-        .from('tasks')
-        .update({ task_text: text, status })
-        .eq('id', existing.id);
+      const { error } = await supabase.from('tasks').update({ task_text: text, status }).eq('id', existing.id);
       if (error) alert(error.message);
     } else {
-      const { error } = await supabase
-        .from('tasks')
-        .insert({ employee_id: empId, company_id: currentCompanyId, date, task_text: text, status });
+      const { error } = await supabase.from('tasks').insert({ employee_id: empId, company_id: currentCompanyId, date, task_text: text, status });
       if (error) alert(error.message);
     }
     await loadCompanyEmployeesAndTasks(currentCompanyId);
@@ -228,7 +204,7 @@
     });
   }
 
-  // ======================= PROFILE SETTINGS =======================
+  // ------------------------- PROFILE SETTINGS -------------------------
   window.showProfileSettings = function() {
     const isAdmin = currentUser.role === "admin";
     const designationField = isAdmin ? '' : `<div><label class="block text-sm font-medium mb-1">Designation</label><input type="text" id="editDesignation" class="w-full border rounded-xl px-3 py-2" value="${(currentUser.designation || '').replace(/</g, '&lt;')}"></div>`;
@@ -250,6 +226,7 @@
       </div>
     `;
     const container = document.getElementById("modalContainer");
+    if (!container) return;
     container.innerHTML = modalHtml;
     const close = () => container.innerHTML = '';
     document.getElementById("closeProfileModal")?.addEventListener("click", close);
@@ -259,7 +236,6 @@
       const newPwd = document.getElementById("editPassword").value;
       const newDesig = isAdmin ? null : document.getElementById("editDesignation")?.value.trim();
       if (!newName || !newEmail) { alert("Name and email required"); return; }
-      // update in Supabase
       const updateObj = { name: newName, email: newEmail };
       if (!isAdmin && newDesig) updateObj.designation = newDesig;
       const { error } = await supabase.from('employees').update(updateObj).eq('id', currentUser.uid);
@@ -279,7 +255,7 @@
     document.getElementById("profileModal")?.addEventListener("click", (e) => { if(e.target === document.getElementById("profileModal")) close(); });
   };
 
-  // ======================= BROADCAST WHATSAPP =======================
+  // ------------------------- BROADCAST WHATSAPP -------------------------
   window.showBroadcastModal = function() {
     const empList = employees.filter(e => e.whatsapp && e.whatsapp.trim() && e.id !== currentUser.uid);
     if (!empList.length) { alert("No employees with WhatsApp numbers"); return; }
@@ -295,6 +271,7 @@
       </div>
     `;
     const container = document.getElementById("modalContainer");
+    if (!container) return;
     container.innerHTML = modalHtml;
     const close = () => container.innerHTML = '';
     document.getElementById("closeBroadcastModal")?.addEventListener("click", close);
@@ -324,7 +301,7 @@
     window.open(`https://wa.me/${clean}`, '_blank');
   };
 
-  // ======================= RENDER UI =======================
+  // ------------------------- RENDER UI -------------------------
   function renderLoginScreen() {
     if (!loginRole) {
       return `
@@ -365,16 +342,8 @@
   window.handleCompanyAdminLogin = async function() {
     const email = document.getElementById("compAdminEmail").value;
     const pwd = document.getElementById("compAdminPassword").value;
-    // find company id by email
-    const { data: company, error } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('email', email)
-      .single();
-    if (error || !company) {
-      alert("Company not found");
-      return;
-    }
+    const { data: company, error } = await supabase.from('companies').select('id').eq('email', email).single();
+    if (error || !company) { alert("Company not found"); return; }
     if (await loginToCompany(company.id, email, pwd)) loginRole = null;
   };
 
@@ -382,15 +351,8 @@
     const companyEmail = document.getElementById("empCompanyEmail").value;
     const email = document.getElementById("empEmail").value;
     const pwd = document.getElementById("empPassword").value;
-    const { data: company, error } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('email', companyEmail)
-      .single();
-    if (error || !company) {
-      alert("Company not found");
-      return;
-    }
+    const { data: company, error } = await supabase.from('companies').select('id').eq('email', companyEmail).single();
+    if (error || !company) { alert("Company not found"); return; }
     if (await loginToCompany(company.id, email, pwd)) loginRole = null;
   };
 
@@ -404,7 +366,7 @@
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8">
         <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><h2 class="text-2xl font-bold"><i class="fas fa-crown text-amber-500"></i> Super Admin Dashboard</h2><div class="flex gap-2"><button id="exportAllCompanies" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><button id="superLogout" class="border px-4 py-2 rounded-xl">Logout</button></div></div>
         <button id="addCompanyBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl mb-6">+ Add Company</button>
-        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${companies.map(c => `<div class="bg-white/70 rounded-2xl p-4"><div class="flex justify-between"><div class="flex items-center gap-3"><img src="${c.logo_url}" class="company-logo"> <div><h3 class="font-bold">${c.name}</h3><p class="text-xs text-gray-500">${c.email}</p></div></div><button class="deleteCompanyBtn text-red-500" data-id="${c.id}"><i class="fas fa-trash"></i></button></div><p class="text-sm text-gray-600 mt-2">${c.address || ""}</p></div>`).join('')}</div>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${companies.map(c => `<div class="bg-white/70 rounded-2xl p-4"><div class="flex justify-between"><div class="flex items-center gap-3"><img src="${c.logo_url}" class="company-logo" onerror="this.src='https://placehold.co/200x80?text=Logo'"> <div><h3 class="font-bold">${c.name}</h3><p class="text-xs text-gray-500">${c.email}</p></div></div><button class="deleteCompanyBtn text-red-500" data-id="${c.id}"><i class="fas fa-trash"></i></button></div><p class="text-sm text-gray-600 mt-2">${c.address || ""}</p></div>`).join('')}</div>
       </div>
       <div id="modalContainer"></div>
     `;
@@ -442,16 +404,16 @@
     const filtered = getFilteredEmployees();
     return `
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8">
-        <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><div class="flex items-center gap-3"><img src="${company?.logo_url}" class="company-logo"> <div><h2 class="text-2xl font-bold">Admin · ${company?.name}</h2><p class="text-gray-500 text-sm">${company?.email}</p><p class="text-xs text-gray-400">Welcome, ${currentUser.name}</p></div></div><div class="flex gap-2"><button onclick="showBroadcastModal()" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fab fa-whatsapp"></i> Broadcast</button><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="exportCompanyExcel" class="bg-gray-800 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><button id="logoutAdmin" class="border px-3 py-1.5 rounded-xl">Logout</button></div></div>
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-6"><div class="flex items-center gap-3"><img src="${company?.logo_url}" class="company-logo" onerror="this.src='https://placehold.co/200x80?text=Logo'"> <div><h2 class="text-2xl font-bold">Admin · ${company?.name}</h2><p class="text-gray-500 text-sm">${company?.email}</p><p class="text-xs text-gray-400">Welcome, ${currentUser.name}</p></div></div><div class="flex gap-2"><button onclick="showBroadcastModal()" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fab fa-whatsapp"></i> Broadcast</button><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="exportCompanyExcel" class="bg-gray-800 text-white px-3 py-1.5 rounded-xl text-sm"><i class="fas fa-file-excel"></i> Export</button><button id="logoutAdmin" class="border px-3 py-1.5 rounded-xl">Logout</button></div></div>
         <div class="mb-6 flex flex-wrap gap-3"><button id="addEmpBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl"><i class="fas fa-user-plus"></i> Add Employee</button><div class="flex items-center gap-2 bg-white/50 p-2 rounded-xl"><i class="fas fa-calendar-alt"></i><input type="date" id="dateFilter" value="${adminSelectedDate}" class="border-0 bg-transparent"></div></div>
-        <div class="bg-white/70 rounded-2xl p-4 mb-8"><h3 class="font-bold text-lg mb-3">Team Members</h3><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="text-left py-2 px-4">Name</th><th class="text-left py-2 px-4">Email</th><th class="text-left py-2 px-4">Designation</th><th class="text-left py-2 px-4">WhatsApp</th><th class="text-left py-2 px-4">Role</th><th class="text-right py-2 px-4">Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td class="py-1 px-4">${emp.name}${emp.role==='admin'?' 👑':''}${emp.id === currentUser?.uid ? ' (you)' : ''}</td><td class="py-1 px-4">${emp.email}</td><td class="py-1 px-4">${emp.designation || "—"}</td><td class="py-1 px-4">${emp.whatsapp || "—"}</td><td class="py-1 px-4"><span class="bg-gray-100 px-2 py-0.5 rounded-full text-xs">${emp.role}</span></td><td class="py-1 px-4 text-right">${emp.whatsapp ? `<button onclick="openWhatsApp('${emp.whatsapp}')" class="text-green-600 mr-2"><i class="fab fa-whatsapp text-lg"></i></button>` : ''}${emp.id !== currentUser?.uid ? `<button class="deleteEmp text-red-500" data-id="${emp.id}"><i class="fas fa-trash-alt"></i></button>` : ''}${currentUser.role === 'admin' && emp.id !== currentUser?.uid ? ` <button class="deleteEmp text-red-500" data-id="${emp.id}"><i class="fas fa-trash-alt"></i></button>` : ''} </td> </tr>`).join('')}</tbody></table></div></div>
+        <div class="bg-white/70 rounded-2xl p-4 mb-8"><h3 class="font-bold text-lg mb-3">Team Members</h3><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="text-left py-2 px-4">Name</th><th class="text-left py-2 px-4">Email</th><th class="text-left py-2 px-4">Designation</th><th class="text-left py-2 px-4">WhatsApp</th><th class="text-left py-2 px-4">Role</th><th class="text-right py-2 px-4">Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td class="py-1 px-4">${emp.name}${emp.role==='admin'?' 👑':''}${emp.id === currentUser?.uid ? ' (you)' : ''}</td><td class="py-1 px-4">${emp.email}</td><td class="py-1 px-4">${emp.designation || "—"}</td><td class="py-1 px-4">${emp.whatsapp || "—"}</td><td class="py-1 px-4"><span class="bg-gray-100 px-2 py-0.5 rounded-full text-xs">${emp.role}</span></td><td class="py-1 px-4 text-right">${emp.whatsapp ? `<button onclick="openWhatsApp('${emp.whatsapp}')" class="text-green-600 mr-2"><i class="fab fa-whatsapp text-lg"></i></button>` : ''}${emp.id !== currentUser?.uid ? `<button class="deleteEmp text-red-500" data-id="${emp.id}"><i class="fas fa-trash-alt"></i></button>` : ''}  </td></tr>`).join('')}</tbody>}</div></div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <div class="stats-card ${adminTaskFilter==='all'?'active':''}" data-filter="all"><div class="text-2xl font-bold text-indigo-600">${total}</div><div class="text-xs">Total Employees</div></div>
           <div class="stats-card ${adminTaskFilter==='submitted'?'active':''}" data-filter="submitted"><div class="text-2xl font-bold text-emerald-600">${submitted}</div><div class="text-xs">Submitted Today</div></div>
           <div class="stats-card ${adminTaskFilter==='pending'?'active':''}" data-filter="pending"><div class="text-2xl font-bold text-amber-600">${pending}</div><div class="text-xs">Pending</div></div>
           <div class="stats-card ${adminTaskFilter==='inprogress'?'active':''}" data-filter="inprogress"><div class="text-2xl font-bold text-blue-600">${inProgress}</div><div class="text-xs">In Progress</div></div>
         </div>
-        <div class="bg-white rounded-2xl overflow-hidden"><div class="px-6 py-3 border-b bg-gray-50"><h3 class="font-semibold">Tasks for ${adminSelectedDate}</h3></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="py-2 px-4 text-left">Employee</th><th class="py-2 px-4 text-left">Task</th><th class="py-2 px-4">Status</th><th class="py-2 px-4 text-center">Submitted</th></tr></thead><tbody>${filtered.map(emp => { const t = dayTasks.find(d => d.employee_id === emp.id); return `<tr><td class="py-1 px-4">${emp.name}<br><span class="text-xs text-gray-400">${emp.designation || ""}</span></td><td class="py-1 px-4">${t ? t.task_text.substring(0,80) : '—'}</td><td class="py-1 px-4"><span class="px-2 py-0.5 rounded-full text-xs ${t ? (t.status==='leave'?'bg-rose-100':'bg-emerald-100') : 'bg-gray-100'}">${t ? (t.status==='leave'?'Leave':'Present') : 'No task'}</span></td><td class="py-1 px-4 text-center"><input type="checkbox" ${t ? 'checked' : ''} disabled></td></tr>` }).join('')}</tbody></tr></div></div>
+        <div class="bg-white rounded-2xl overflow-hidden"><div class="px-6 py-3 border-b bg-gray-50"><h3 class="font-semibold">Tasks for ${adminSelectedDate}</h3></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="py-2 px-4 text-left">Employee</th><th class="py-2 px-4 text-left">Task</th><th class="py-2 px-4">Status</th><th class="py-2 px-4 text-center">Submitted</th></tr></thead><tbody>${filtered.map(emp => { const t = dayTasks.find(d => d.employee_id === emp.id); return `<tr><td class="py-1 px-4">${emp.name}<br><span class="text-xs text-gray-400">${emp.designation || ""}</span></td><td class="py-1 px-4">${t ? t.task_text.substring(0,80) : '—'}</td><td class="py-1 px-4"><span class="px-2 py-0.5 rounded-full text-xs ${t ? (t.status==='leave'?'bg-rose-100':'bg-emerald-100') : 'bg-gray-100'}">${t ? (t.status==='leave'?'Leave':'Present') : 'No task'}</span></td><td class="py-1 px-4 text-center"><input type="checkbox" ${t ? 'checked' : ''} disabled></td></tr>` }).join('')}</tbody>}</div></div>
         <div class="text-xs text-center text-gray-400 mt-6">Click stat cards to filter • 📅 Date picker • 📢 Broadcast WhatsApp</div>
       </div>
       <div id="modalContainer"></div>
@@ -493,9 +455,9 @@
     const total = myTasks.length, leaveDays = myTasks.filter(t => t.status === "leave").length, present = total - leaveDays;
     return `
       <div class="glass-panel rounded-3xl shadow-xl p-6 md:p-8 max-w-4xl mx-auto">
-        <div class="flex flex-wrap justify-between items-center gap-3 mb-6"><div class="flex items-center gap-3"><img src="${company?.logo_url}" class="company-logo"> <div><h2 class="text-2xl font-bold">Welcome, ${currentUser.name}</h2><p class="text-gray-500">${company?.name} · ${currentUser.designation || "Employee"}</p><p class="text-xs text-gray-400">${company?.email}</p></div></div><div class="flex gap-3"><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="employeeLogoutBtn" class="border px-4 py-2 rounded-xl">Logout</button></div></div>
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-6"><div class="flex items-center gap-3"><img src="${company?.logo_url}" class="company-logo" onerror="this.src='https://placehold.co/200x80?text=Logo'"> <div><h2 class="text-2xl font-bold">Welcome, ${currentUser.name}</h2><p class="text-gray-500">${company?.name} · ${currentUser.designation || "Employee"}</p><p class="text-xs text-gray-400">${company?.email}</p></div></div><div class="flex gap-3"><button onclick="showProfileSettings()" class="text-gray-600 hover:text-indigo-600 text-2xl"><i class="fas fa-cog"></i></button><button id="employeeLogoutBtn" class="border px-4 py-2 rounded-xl">Logout</button></div></div>
         <div class="bg-gradient-to-br from-indigo-50 to-sky-50 rounded-2xl p-5 mb-8"><div class="flex justify-between items-center mb-2"><h3 class="font-semibold text-lg">Today's Task · ${today}</h3><div class="flex items-center gap-2"><i class="fas fa-check-circle text-green-600"></i><span class="text-sm">Task submitted: ${hasSubmitted ? '✅ Yes' : '❌ No'}</span></div></div><form id="employeeTaskForm"><textarea id="taskDesc" rows="3" class="w-full border rounded-xl p-3" placeholder="Describe your work...">${taskValue.replace(/</g, '&lt;')}</textarea><div class="flex items-center gap-4 my-4"><label><input type="checkbox" id="leaveCheckbox" ${isLeave ? 'checked' : ''}> <i class="fas fa-umbrella-beach"></i> On Leave / Absent today</label></div><button type="submit" class="bg-indigo-600 text-white px-5 py-2 rounded-xl">Save Task</button></form></div>
-        <h3 class="font-bold text-xl mb-3">My History</h3><div class="overflow-x-auto rounded-xl border bg-white/50 mb-6"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Status</th></tr></thead><tbody>${myTasks.map(tsk => `<tr><td class="px-4 py-2">${tsk.date}</td><td class="px-4 py-2">${tsk.task_text.substring(0,100)}</td><td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs ${tsk.status==='leave'?'bg-rose-100':'bg-emerald-100'}">${tsk.status==='leave'?'Leave':'Present'}</span></td></tr>`).join('')}${!myTasks.length ? '<tr><td colspan="3" class="text-center py-4">No tasks yet</td><th>' : ''}</tbody></table></div>
+        <h3 class="font-bold text-xl mb-3">My History</h3><div class="overflow-x-auto rounded-xl border bg-white/50 mb-6"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Date</th><th class="px-4 py-2 text-left">Task</th><th class="px-4 py-2 text-left">Status</th></tr></thead><tbody>${myTasks.map(tsk => `<tr><td class="px-4 py-2">${tsk.date}</td><td class="px-4 py-2">${tsk.task_text.substring(0,100)}</td><td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs ${tsk.status==='leave'?'bg-rose-100':'bg-emerald-100'}">${tsk.status==='leave'?'Leave':'Present'}</span></td></tr>`).join('')}${!myTasks.length ? '<tr><td colspan="3" class="text-center py-4">No tasks yet</td></tr>' : ''}</tbody>}</div>
         <div class="grid md:grid-cols-3 gap-4"><div class="stats-card"><div class="text-2xl font-bold text-indigo-600">${total}</div><div class="text-xs">Total Tasks</div></div><div class="stats-card"><div class="text-2xl font-bold text-emerald-600">${present}</div><div class="text-xs">Present Days</div></div><div class="stats-card"><div class="text-2xl font-bold text-rose-500">${leaveDays}</div><div class="text-xs">Leave Days</div></div></div>
       </div>
     `;
@@ -524,6 +486,7 @@
 
   async function renderApp() {
     const root = document.getElementById("appRoot");
+    if (!root) return;
     if (!currentUser) {
       await loadCompanies();
       root.innerHTML = renderLoginScreen();
@@ -542,7 +505,7 @@
     }
   }
 
-  // ======================= INIT =======================
+  // ======================= START =======================
   (async () => {
     await loadCompanies();
     const sessionUser = await getCurrentUser();
