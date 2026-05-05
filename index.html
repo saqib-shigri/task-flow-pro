@@ -3,65 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>TaskFlow – Cloud (Firebase)</title>
+  <title>TaskFlow – Single Password Login</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <style>
     * { font-family: 'Inter', sans-serif; }
     body { background: radial-gradient(circle at 10% 30%, #f0f4ff, #e6edfa); background-attachment: fixed; }
-    .glass-panel { background: rgba(255,255,255,0.92); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.5); border-radius: 2rem; transition: transform 0.2s; }
-    .glass-panel:hover { transform: translateY(-4px); }
+    .glass-panel { background: rgba(255,255,255,0.92); backdrop-filter: blur(14px); border-radius: 2rem; border: 1px solid rgba(255,255,255,0.5); transition: transform 0.2s; }
+    .glass-panel:hover { transform: translateY(-5px); }
+    button:active { transform: scale(0.97); }
   </style>
 </head>
 <body class="min-h-screen p-5">
-<div id="appRoot"></div>
+<div id="appRoot" class="max-w-6xl mx-auto"></div>
 
 <script>
-  // ==================== 🔁 REPLACE WITH YOUR FIREBASE CONFIG ====================
+  // ==================== Firebase config (yours) ====================
   const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT.firebasestorage.app",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyCFjxd4Vx2WSVGMZRl6k0liuUDZ7aL1YwU",
+    authDomain: "taskflowpro-8dbee.firebaseapp.com",
+    projectId: "taskflowpro-8dbee",
+    storageBucket: "taskflowpro-8dbee.firebasestorage.app",
+    messagingSenderId: "468480672899",
+    appId: "1:468480672899:web:00bb428da563b5594287b6"
   };
-  // ============================================================================
-
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
   const auth = firebase.auth();
 
-  // ---- global state ----
   let currentUser = null;
+  let companies = [];
   let employees = [];
   let tasks = [];
-  let companies = [];
   let currentCompanyId = null;
 
-  // helper: load companies
+  // ---------- Load data ----------
   async function loadCompanies() {
     const snap = await db.collection("companies").get();
     companies = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
-  // load employees & tasks of a company
-  async function loadCompanyData(cid) {
-    currentCompanyId = cid;
-    const empSnap = await db.collection("users").where("companyId", "==", cid).get();
+  async function loadCompanyData(companyId) {
+    currentCompanyId = companyId;
+    const empSnap = await db.collection("users").where("companyId", "==", companyId).get();
     employees = empSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const taskSnap = await db.collection("tasks").where("companyId", "==", cid).get();
+    const taskSnap = await db.collection("tasks").where("companyId", "==", companyId).get();
     tasks = taskSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
-  // login handlers
-  async function loginSuper(email, pwd) {
-    if (email === "super@taskflow.com" && pwd === "super123") {
-      currentUser = { id: "super", email, role: "super", name: "Owner" };
+  // ---------- Login (no company password) ----------
+  async function loginSuper(email, password) {
+    if (email === "super@taskflow.com" && password === "super123") {
+      currentUser = { uid: "super", email, role: "super", name: "Super Admin" };
       await loadCompanies();
       renderApp();
       return true;
@@ -69,25 +65,25 @@
     return false;
   }
 
-  async function loginCompanyAdmin(companyId, email, pwd) {
-    // first check company password
-    const company = companies.find(c => c.id === companyId);
-    if (!company || company.password !== pwd) return false;
-    // then authenticate employee
-    const user = employees.find(e => e.email === email && e.password === pwd && e.role === "admin");
-    if (!user) return false;
-    currentUser = { id: user.id, email, role: "admin", name: user.name };
+  async function loginCompanyAdmin(companyId, email, password) {
+    const user = employees.find(e => e.email === email && e.password === password && e.role === "admin" && e.companyId === companyId);
+    if (!user) {
+      alert("Invalid admin credentials");
+      return false;
+    }
+    currentUser = { uid: user.id, email, role: "admin", name: user.name };
     await loadCompanyData(companyId);
     renderApp();
     return true;
   }
 
-  async function loginEmployee(companyId, email, pwd) {
-    const company = companies.find(c => c.id === companyId);
-    if (!company) return false;
-    const user = employees.find(e => e.email === email && e.password === pwd && e.role === "employee");
-    if (!user) return false;
-    currentUser = { id: user.id, email, role: "employee", name: user.name, designation: user.designation };
+  async function loginEmployee(companyId, email, password) {
+    const user = employees.find(e => e.email === email && e.password === password && e.role === "employee" && e.companyId === companyId);
+    if (!user) {
+      alert("Invalid employee credentials");
+      return false;
+    }
+    currentUser = { uid: user.id, email, role: "employee", name: user.name, designation: user.designation };
     await loadCompanyData(companyId);
     renderApp();
     return true;
@@ -95,22 +91,48 @@
 
   function logout() { currentUser = null; renderApp(); }
 
-  // ---- owner operations ----
-  async function addCompany(name, email, logo, address, password) {
-    await db.collection("companies").add({ name, email, logo: logo || "", address, password });
+  // ---------- Owner operations ----------
+  async function addCompany(name, email, logo, address) {
+    if (!name || !email) return alert("Company name and email required");
+    await db.collection("companies").add({ name, email, logo: logo || "", address });
     await loadCompanies();
     renderApp();
   }
 
-  // ---- admin operations ----
+  async function deleteCompany(companyId) {
+    if (confirm("Delete company and all its data?")) {
+      await db.collection("companies").doc(companyId).delete();
+      const users = await db.collection("users").where("companyId", "==", companyId).get();
+      const tasksSnap = await db.collection("tasks").where("companyId", "==", companyId).get();
+      const batch = db.batch();
+      users.docs.forEach(d => batch.delete(d.ref));
+      tasksSnap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      await loadCompanies();
+      renderApp();
+    }
+  }
+
+  // ---------- Admin operations ----------
   async function addEmployee(name, email, password, role, designation, whatsapp) {
-    const newEmp = { id: Date.now()+Math.random(), name, email, password, role, designation, whatsapp, companyId: currentCompanyId };
-    await db.collection("users").doc(newEmp.id).set(newEmp);
+    if (!name || !email || !password) return alert("All fields required");
+    const newId = Date.now() + "" + Math.random();
+    await db.collection("users").doc(newId).set({
+      id: newId, name, email, password, role, designation, whatsapp, companyId: currentCompanyId
+    });
     await loadCompanyData(currentCompanyId);
     renderApp();
   }
 
-  // ---- task operations ----
+  async function deleteEmployee(empId) {
+    if (confirm("Delete this employee?")) {
+      await db.collection("users").doc(empId).delete();
+      await loadCompanyData(currentCompanyId);
+      renderApp();
+    }
+  }
+
+  // ---------- Tasks ----------
   async function saveTask(empId, date, text, status) {
     const existing = tasks.find(t => t.employeeId === empId && t.date === date);
     if (existing) {
@@ -122,73 +144,89 @@
     renderApp();
   }
 
-  // ---- render UI (simple but complete) ----
+  // ---------- UI rendering ----------
   function renderLogin() {
-    const opts = companies.map(c => `<option value="${c.id}">${c.name}</option>`);
+    const companyOptions = `<option value="">-- Select Company --</option>` + companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     return `
       <div class="max-w-5xl mx-auto mt-12">
-        <div class="text-center mb-8"><i class="fas fa-tasks text-5xl text-indigo-600"></i><h1 class="text-3xl font-bold">TaskFlow Cloud</h1></div>
+        <div class="text-center mb-8"><i class="fas fa-tasks text-5xl text-indigo-600"></i><h1 class="text-3xl font-bold">TaskFlow Cloud</h1><p class="text-gray-500">Single password login</p></div>
         <div class="grid md:grid-cols-3 gap-6">
-          <div class="glass-panel p-6 text-center"><i class="fas fa-crown text-4xl"></i><h2 class="text-xl font-bold">Super Admin</h2>
-            <div class="space-y-2 mt-2"><input type="email" id="superEmail" placeholder="super@taskflow.com" class="w-full border p-2 rounded"><input type="password" id="superPwd" placeholder="super123" class="w-full border p-2 rounded"><button onclick="loginSuper()" class="bg-indigo-600 text-white w-full py-2 rounded">Login</button></div>
+          <!-- Super Admin -->
+          <div class="glass-panel p-6 text-center">
+            <i class="fas fa-crown text-4xl text-amber-500"></i><h2 class="text-xl font-bold mt-2">Super Admin</h2>
+            <div class="space-y-2 mt-4">
+              <input type="email" id="superEmail" placeholder="Email" class="w-full border p-2 rounded">
+              <input type="password" id="superPassword" placeholder="Password" class="w-full border p-2 rounded">
+              <button onclick="doLoginSuper()" class="bg-indigo-600 text-white w-full py-2 rounded">Login</button>
+            </div>
           </div>
-          <div class="glass-panel p-6 text-center"><i class="fas fa-building text-4xl"></i><h2 class="text-xl font-bold">Company Admin</h2>
-            <div class="space-y-2 mt-2"><select id="adminCompany" class="w-full border p-2 rounded"><option value="">-- Select Company --</option>${opts}</select><input type="email" id="adminEmail" placeholder="Email" class="w-full border p-2 rounded"><input type="password" id="adminPwd" placeholder="Password" class="w-full border p-2 rounded"><button onclick="loginCompanyAdmin()" class="bg-indigo-600 text-white w-full py-2 rounded">Login</button></div>
+          <!-- Company Admin -->
+          <div class="glass-panel p-6 text-center">
+            <i class="fas fa-user-shield text-4xl text-indigo-500"></i><h2 class="text-xl font-bold mt-2">Company Admin</h2>
+            <div class="space-y-2 mt-4">
+              <select id="adminCompanyId" class="w-full border p-2 rounded">${companyOptions}</select>
+              <input type="email" id="adminEmail" placeholder="Your Email" class="w-full border p-2 rounded">
+              <input type="password" id="adminPassword" placeholder="Your Password" class="w-full border p-2 rounded">
+              <button onclick="doLoginCompanyAdmin()" class="bg-indigo-600 text-white w-full py-2 rounded">Login</button>
+            </div>
           </div>
-          <div class="glass-panel p-6 text-center"><i class="fas fa-user-check text-4xl"></i><h2 class="text-xl font-bold">Employee</h2>
-            <div class="space-y-2 mt-2"><select id="empCompany" class="w-full border p-2 rounded"><option value="">-- Select Company --</option>${opts}</select><input type="email" id="empEmail" placeholder="Email" class="w-full border p-2 rounded"><input type="password" id="empPwd" placeholder="Password" class="w-full border p-2 rounded"><button onclick="loginEmployee()" class="bg-emerald-600 text-white w-full py-2 rounded">Login</button></div>
+          <!-- Employee -->
+          <div class="glass-panel p-6 text-center">
+            <i class="fas fa-user-check text-4xl text-emerald-500"></i><h2 class="text-xl font-bold mt-2">Employee</h2>
+            <div class="space-y-2 mt-4">
+              <select id="empCompanyId" class="w-full border p-2 rounded">${companyOptions}</select>
+              <input type="email" id="empEmail" placeholder="Your Email" class="w-full border p-2 rounded">
+              <input type="password" id="empPassword" placeholder="Your Password" class="w-full border p-2 rounded">
+              <button onclick="doLoginEmployee()" class="bg-emerald-600 text-white w-full py-2 rounded">Login</button>
+            </div>
           </div>
         </div>
-        <div class="text-center mt-6 text-xs text-gray-500">Owner: super@taskflow.com / super123</div>
+        <div class="text-center mt-6 text-xs text-gray-400">Super admin: super@taskflow.com / super123</div>
       </div>
     `;
   }
 
-  // expose login functions globally
-  window.loginSuper = async () => {
+  window.doLoginSuper = async () => {
     const email = document.getElementById("superEmail").value;
-    const pwd = document.getElementById("superPwd").value;
+    const pwd = document.getElementById("superPassword").value;
     await loginSuper(email, pwd);
   };
-  window.loginCompanyAdmin = async () => {
-    const cid = document.getElementById("adminCompany").value;
+  window.doLoginCompanyAdmin = async () => {
+    const cid = document.getElementById("adminCompanyId").value;
     const email = document.getElementById("adminEmail").value;
-    const pwd = document.getElementById("adminPwd").value;
-    if (!cid) return alert("Select company");
+    const pwd = document.getElementById("adminPassword").value;
+    if (!cid) return alert("Select a company");
     await loginCompanyAdmin(cid, email, pwd);
   };
-  window.loginEmployee = async () => {
-    const cid = document.getElementById("empCompany").value;
+  window.doLoginEmployee = async () => {
+    const cid = document.getElementById("empCompanyId").value;
     const email = document.getElementById("empEmail").value;
-    const pwd = document.getElementById("empPwd").value;
-    if (!cid) return alert("Select company");
+    const pwd = document.getElementById("empPassword").value;
+    if (!cid) return alert("Select a company");
     await loginEmployee(cid, email, pwd);
   };
 
   function renderOwnerDashboard() {
     return `
       <div class="glass-panel p-6">
-        <div class="flex justify-between"><h2 class="text-2xl font-bold">Owner Dashboard</h2><button onclick="logout()" class="border px-4 py-2 rounded">Logout</button></div>
+        <div class="flex justify-between"><h2 class="text-2xl font-bold">Super Admin</h2><button onclick="logout()" class="border px-4 py-2 rounded">Logout</button></div>
         <button onclick="showAddCompanyModal()" class="bg-indigo-600 text-white px-4 py-2 rounded mt-4">+ Add Company</button>
-        <div class="grid gap-3 mt-4">${companies.map(c => `<div class="bg-white/70 p-3 rounded flex justify-between"><span><b>${c.name}</b><br><small>${c.email}</small></span><button onclick="deleteCompany('${c.id}')" class="text-red-500"><i class="fas fa-trash"></i></button></div>`).join('')}</div>
+        <div class="grid gap-3 mt-4">${companies.map(c => `
+          <div class="bg-white/70 p-3 rounded flex justify-between">
+            <div><b>${c.name}</b><br><small>${c.email}</small></div>
+            <button onclick="deleteCompany('${c.id}')" class="text-red-500"><i class="fas fa-trash"></i></button>
+          </div>
+        `).join('')}</div>
       </div>
     `;
   }
 
   window.showAddCompanyModal = () => {
     const name = prompt("Company name");
-    const email = prompt("Company email");
-    const password = prompt("Company password");
-    const logo = prompt("Logo URL");
-    const address = prompt("Address");
-    if (name && email && password) addCompany(name, email, logo, address, password);
-  };
-  window.deleteCompany = async (id) => {
-    if (confirm("Delete all data?")) {
-      await db.collection("companies").doc(id).delete();
-      await loadCompanies();
-      renderApp();
-    }
+    const email = prompt("Company email (contact)");
+    const logo = prompt("Logo URL (optional)");
+    const address = prompt("Address (optional)");
+    if (name && email) addCompany(name, email, logo, address);
   };
 
   function renderAdminDashboard() {
@@ -197,40 +235,33 @@
       <div class="glass-panel p-6">
         <div class="flex justify-between"><h2 class="text-2xl font-bold">Admin · ${company?.name}</h2><button onclick="logout()" class="border px-4 py-2 rounded">Logout</button></div>
         <button onclick="showAddEmployeeModal()" class="bg-indigo-600 text-white px-4 py-2 rounded mt-4">+ Add Employee</button>
-        <div class="overflow-x-auto mt-4"><table class="min-w-full bg-white/70 rounded"><thead><tr><th>Name</th><th>Email</th><th>Designation</th><th>WhatsApp</th><th>Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td>${emp.name}</td><td>${emp.email}</td><td>${emp.designation || '-'}</td><td>${emp.whatsapp || '-'}</td><td><button onclick="deleteEmployee('${emp.id}')" class="text-red-500"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>
-        <hr class="my-4"><h3 class="font-bold">Tasks Today (${new Date().toISOString().slice(0,10)})</h3>
-        <div class="overflow-x-auto"><table class="min-w-full"><thead><tr><th>Employee</th><th>Task</th><th>Status</th></tr></thead><tbody>${employees.map(emp => { const t = tasks.find(t => t.employeeId === emp.id && t.date === new Date().toISOString().slice(0,10)); return `<tr><td>${emp.name}</td><td>${t ? t.taskText : '—'}</td><td>${t ? (t.status === 'leave' ? 'Leave' : 'Present') : 'No task'}</td></tr>`; }).join('')}</tbody></table></div>
+        <div class="overflow-auto mt-4"><table class="min-w-full bg-white/70 rounded"><thead class="bg-gray-100"><tr><th class="p-2">Name</th><th>Email</th><th>Designation</th><th>WhatsApp</th><th>Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td class="p-2">${emp.name}</td><td class="p-2">${emp.email}</td><td class="p-2">${emp.designation || '-'}</td><td class="p-2">${emp.whatsapp || '-'}</td><td class="p-2"><button onclick="deleteEmployee('${emp.id}')" class="text-red-500"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>
+        <hr class="my-4"><h3>Today's Tasks (${new Date().toISOString().slice(0,10)})</h3>
+        <div class="overflow-auto"><table class="min-w-full bg-white/70 rounded"><thead class="bg-gray-100"><tr><th>Employee</th><th>Task</th><th>Status</th></tr></thead><tbody>${employees.map(emp => { const t = tasks.find(t => t.employeeId === emp.id && t.date === new Date().toISOString().slice(0,10)); return `<tr><td class="p-2">${emp.name}</td><td class="p-2">${t ? t.taskText : '—'}</td><td class="p-2">${t ? (t.status === 'leave' ? 'Leave' : 'Present') : 'No task'}</td></tr>`; }).join('')}</tbody></table></div>
       </div>
     `;
   }
 
   window.showAddEmployeeModal = () => {
-    const name = prompt("Name");
+    const name = prompt("Full name");
     const email = prompt("Email");
     const pwd = prompt("Password");
     const role = confirm("Admin? (OK=Admin, Cancel=Employee)") ? "admin" : "employee";
     const designation = prompt("Designation (e.g., Web Developer)");
-    const whatsapp = prompt("WhatsApp number");
+    const whatsapp = prompt("WhatsApp number (with country code)");
     if (name && email && pwd) addEmployee(name, email, pwd, role, designation, whatsapp);
-  };
-  window.deleteEmployee = async (id) => {
-    if (confirm("Delete employee?")) {
-      await db.collection("users").doc(id).delete();
-      await loadCompanyData(currentCompanyId);
-      renderApp();
-    }
   };
 
   function renderEmployeeDashboard() {
     const company = companies.find(c => c.id === currentCompanyId);
     const today = new Date().toISOString().slice(0,10);
-    const myTasks = tasks.filter(t => t.employeeId === currentUser.id);
+    const myTasks = tasks.filter(t => t.employeeId === currentUser.uid);
     const todayTask = myTasks.find(t => t.date === today);
     return `
       <div class="glass-panel p-6 max-w-2xl mx-auto">
-        <div class="flex justify-between"><h2 class="text-2xl font-bold">Welcome, ${currentUser.name} (${company?.name})</h2><button onclick="logout()" class="border px-4 py-2 rounded">Logout</button></div>
-        <div class="bg-blue-50 p-4 rounded mt-4"><h3>Today's Task</h3><form id="taskForm"><textarea id="taskText" rows="2" class="w-full border p-2 rounded">${todayTask?.taskText || ''}</textarea><label><input type="checkbox" id="isLeave" ${todayTask?.status === 'leave' ? 'checked' : ''}> On Leave</label><button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded mt-2">Save</button></form></div>
-        <h3 class="font-bold mt-6">History</h3><table class="min-w-full bg-white/70 rounded"><thead><tr><th>Date</th><th>Task</th><th>Status</th></tr></thead><tbody>${myTasks.sort((a,b)=>b.date.localeCompare(a.date)).map(t => `<tr><td>${t.date}</td><td>${t.taskText}</td><td>${t.status === 'leave' ? 'Leave' : 'Present'}</td></tr>`).join('')}</tbody></table>
+        <div class="flex justify-between"><h2>Welcome, ${currentUser.name}</h2><button onclick="logout()" class="border px-4 py-2 rounded">Logout</button></div>
+        <div class="bg-blue-50 p-4 rounded mt-4"><h3>Today's Task (${today})</h3><form id="taskForm"><textarea id="taskText" rows="2" class="w-full border p-2 rounded">${todayTask?.taskText || ''}</textarea><label><input type="checkbox" id="isLeave" ${todayTask?.status === 'leave' ? 'checked' : ''}> On Leave</label><button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded mt-2">Save</button></form></div>
+        <h3 class="mt-6">My History</h3><div class="overflow-auto"><table class="min-w-full bg-white/70 rounded"><thead class="bg-gray-100"><tr><th>Date</th><th>Task</th><th>Status</th></tr></thead><tbody>${myTasks.sort((a,b)=>b.date.localeCompare(a.date)).map(t => `<tr><td class="p-2">${t.date}</td><td class="p-2">${t.taskText}</td><td class="p-2">${t.status === 'leave' ? 'Leave' : 'Present'}</td></tr>`).join('')}</tbody></table></div>
       </div>
     `;
   }
@@ -239,7 +270,9 @@
     const root = document.getElementById("appRoot");
     if (!currentUser) {
       root.innerHTML = renderLogin();
-    } else if (currentUser.role === "super") {
+      return;
+    }
+    if (currentUser.role === "super") {
       root.innerHTML = renderOwnerDashboard();
     } else if (currentUser.role === "admin") {
       root.innerHTML = renderAdminDashboard();
@@ -247,14 +280,15 @@
       root.innerHTML = renderEmployeeDashboard();
       document.getElementById("taskForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const text = document.getElementById("taskText").value;
+        const text = document.getElementById("taskText").value.trim();
         const isLeave = document.getElementById("isLeave").checked;
-        await saveTask(currentUser.id, new Date().toISOString().slice(0,10), text || (isLeave ? "On leave" : "No task"), isLeave ? "leave" : "present");
+        if (!text && !isLeave) return alert("Enter task or mark leave");
+        await saveTask(currentUser.uid, new Date().toISOString().slice(0,10), text || (isLeave ? "On leave" : ""), isLeave ? "leave" : "present");
       });
     }
   }
 
-  // initial load
+  // Start
   (async () => {
     await loadCompanies();
     renderApp();
