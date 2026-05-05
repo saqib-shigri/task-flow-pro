@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>TaskFlow – Single Password Login</title>
+  <title>TaskFlow Pro – Auto‑Create Admin</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -21,7 +21,7 @@
 <div id="appRoot" class="max-w-6xl mx-auto"></div>
 
 <script>
-  // ==================== Firebase config (yours) ====================
+  // ==================== Firebase config ====================
   const firebaseConfig = {
     apiKey: "AIzaSyCFjxd4Vx2WSVGMZRl6k0liuUDZ7aL1YwU",
     authDomain: "taskflowpro-8dbee.firebaseapp.com",
@@ -54,7 +54,7 @@
     tasks = taskSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
-  // ---------- Login (no company password) ----------
+  // ---------- Login (single password) ----------
   async function loginSuper(email, password) {
     if (email === "super@taskflow.com" && password === "super123") {
       currentUser = { uid: "super", email, role: "super", name: "Super Admin" };
@@ -91,12 +91,26 @@
 
   function logout() { currentUser = null; renderApp(); }
 
-  // ---------- Owner operations ----------
+  // ---------- Owner operations (auto‑create default admin) ----------
   async function addCompany(name, email, logo, address) {
     if (!name || !email) return alert("Company name and email required");
-    await db.collection("companies").add({ name, email, logo: logo || "", address });
+    // Add company document
+    const companyRef = await db.collection("companies").add({ name, email, logo: logo || "", address });
+    // Create a default admin user for this company
+    const adminId = Date.now() + "" + Math.random();
+    await db.collection("users").doc(adminId).set({
+      id: adminId,
+      name: "Company Admin",
+      email: "admin@company.com",
+      password: "admin123",
+      role: "admin",
+      designation: "Company Administrator",
+      whatsapp: "",
+      companyId: companyRef.id
+    });
     await loadCompanies();
     renderApp();
+    alert(`✅ Company "${name}" created! Default admin → email: admin@company.com, password: admin123`);
   }
 
   async function deleteCompany(companyId) {
@@ -151,7 +165,6 @@
       <div class="max-w-5xl mx-auto mt-12">
         <div class="text-center mb-8"><i class="fas fa-tasks text-5xl text-indigo-600"></i><h1 class="text-3xl font-bold">TaskFlow Cloud</h1><p class="text-gray-500">Single password login</p></div>
         <div class="grid md:grid-cols-3 gap-6">
-          <!-- Super Admin -->
           <div class="glass-panel p-6 text-center">
             <i class="fas fa-crown text-4xl text-amber-500"></i><h2 class="text-xl font-bold mt-2">Super Admin</h2>
             <div class="space-y-2 mt-4">
@@ -160,7 +173,6 @@
               <button onclick="doLoginSuper()" class="bg-indigo-600 text-white w-full py-2 rounded">Login</button>
             </div>
           </div>
-          <!-- Company Admin -->
           <div class="glass-panel p-6 text-center">
             <i class="fas fa-user-shield text-4xl text-indigo-500"></i><h2 class="text-xl font-bold mt-2">Company Admin</h2>
             <div class="space-y-2 mt-4">
@@ -170,7 +182,6 @@
               <button onclick="doLoginCompanyAdmin()" class="bg-indigo-600 text-white w-full py-2 rounded">Login</button>
             </div>
           </div>
-          <!-- Employee -->
           <div class="glass-panel p-6 text-center">
             <i class="fas fa-user-check text-4xl text-emerald-500"></i><h2 class="text-xl font-bold mt-2">Employee</h2>
             <div class="space-y-2 mt-4">
@@ -235,9 +246,9 @@
       <div class="glass-panel p-6">
         <div class="flex justify-between"><h2 class="text-2xl font-bold">Admin · ${company?.name}</h2><button onclick="logout()" class="border px-4 py-2 rounded">Logout</button></div>
         <button onclick="showAddEmployeeModal()" class="bg-indigo-600 text-white px-4 py-2 rounded mt-4">+ Add Employee</button>
-        <div class="overflow-auto mt-4"><table class="min-w-full bg-white/70 rounded"><thead class="bg-gray-100"><tr><th class="p-2">Name</th><th>Email</th><th>Designation</th><th>WhatsApp</th><th>Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td class="p-2">${emp.name}</td><td class="p-2">${emp.email}</td><td class="p-2">${emp.designation || '-'}</td><td class="p-2">${emp.whatsapp || '-'}</td><td class="p-2"><button onclick="deleteEmployee('${emp.id}')" class="text-red-500"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>
+        <div class="overflow-auto mt-4"><table class="min-w-full bg-white/70 rounded"><thead class="bg-gray-100"><tr><th class="p-2">Name</th><th>Email</th><th>Designation</th><th>WhatsApp</th><th>Action</th></tr></thead><tbody>${employees.map(emp => `<tr><td class="p-2">${emp.name}</td><td class="p-2">${emp.email}<td><td class="p-2">${emp.designation || '-'}</td><td class="p-2">${emp.whatsapp || '-'}</td><td class="p-2"><button onclick="deleteEmployee('${emp.id}')" class="text-red-500"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>
         <hr class="my-4"><h3>Today's Tasks (${new Date().toISOString().slice(0,10)})</h3>
-        <div class="overflow-auto"><table class="min-w-full bg-white/70 rounded"><thead class="bg-gray-100"><tr><th>Employee</th><th>Task</th><th>Status</th></tr></thead><tbody>${employees.map(emp => { const t = tasks.find(t => t.employeeId === emp.id && t.date === new Date().toISOString().slice(0,10)); return `<tr><td class="p-2">${emp.name}</td><td class="p-2">${t ? t.taskText : '—'}</td><td class="p-2">${t ? (t.status === 'leave' ? 'Leave' : 'Present') : 'No task'}</td></tr>`; }).join('')}</tbody></table></div>
+        <div class="overflow-auto"><table class="min-w-full bg-white/70 rounded"><thead class="bg-gray-100"><tr><th>Employee</th><th>Task</th><th>Status</th></tr></thead><tbody>${employees.map(emp => { const t = tasks.find(t => t.employeeId === emp.id && t.date === new Date().toISOString().slice(0,10)); return `<tr><td class="p-2">${emp.name}</td><td class="p-2">${t ? t.taskText : '—'}</td><td class="p-2">${t ? (t.status === 'leave' ? 'Leave' : 'Present') : 'No task'}</td></tr>`; }).join('')}</tbody></tr></div>
       </div>
     `;
   }
